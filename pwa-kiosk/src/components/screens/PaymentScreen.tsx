@@ -414,7 +414,7 @@ export default function PaymentScreen({
   )
 
   return (
-    <div className="flex h-full min-h-screen w-full flex-col bg-cream-50">
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-cream-50">
       {/* Header: "Regresar a MENU" en la esquina superior izquierda (junto al
           botón de volver), logo centrado (mismo patrón que MenuScreen, para
           consistencia visual) y "Revisión de Pedido" en la esquina superior derecha. */}
@@ -444,28 +444,32 @@ export default function PaymentScreen({
       </header>
 
       {estado !== 'aprobado' ? (
-        <main className="flex flex-1 flex-col overflow-y-auto p-6">
-          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6">
+        <main className="flex flex-1 flex-col overflow-y-auto p-4">
+          <div className="mx-auto flex w-full min-h-0 max-w-5xl flex-1 flex-col gap-3">
             {/*
-              min-h-0 en el grid y en cada `<section>` es necesario para que
-              `flex-1`/`h-full` puedan realmente ENCOGER las columnas por
-              debajo de su alto de contenido (por defecto los hijos flex/grid
-              tienen min-height:auto, así que si el listado de productos o las
-              sugerencias son largos, la columna se estira más allá del
-              espacio disponible y empuja los botones inferiores fuera de la
-              pantalla, obligando a hacer scroll). Con min-h-0 la columna
-              queda fija al alto disponible y el listado interno hace scroll
-              propio (ver overflow-y-auto en los contenedores internos de
-              abajo), dejando siempre visibles los botones inferiores.
+              min-h-0 en el wrapper, en el grid y en cada `<section>` es
+              necesario para que `flex-1`/`h-full` puedan realmente ENCOGER
+              las columnas por debajo de su alto de contenido (por defecto
+              los hijos flex/grid tienen min-height:auto, así que si el
+              listado de productos o las sugerencias son largos, la columna
+              se estira más allá del espacio disponible y empuja los botones
+              inferiores fuera de la pantalla, obligando a hacer scroll). Con
+              min-h-0 la columna queda fija al alto disponible y el listado
+              interno hace scroll propio (ver overflow-y-auto en los
+              contenedores internos de abajo), dejando siempre visibles los
+              botones inferiores. El contenedor raíz además usa
+              `h-screen overflow-hidden` (en vez de `min-h-screen`, que
+              permite crecer más allá del viewport) para que este límite sea
+              real y no sólo teórico en la pantalla del kiosko (M8W).
             */}
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 md:grid-cols-2">
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 md:grid-cols-2">
               {/* Columna izquierda: resumen del pago (productos, subtotal, impuestos, total) */}
-              <section className="flex h-full min-h-0 flex-col gap-3 rounded-2xl bg-white p-5 shadow-sm shadow-wood-900/10">
-                <div className="mb-1 flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-wood-900">{t('payment.orderSummary')}</h2>
+              <section className="flex h-full min-h-0 flex-col gap-2 rounded-2xl bg-white p-3 shadow-sm shadow-wood-900/10">
+                <div className="mb-0.5 flex items-center justify-between">
+                  <h2 className="text-base font-bold text-wood-900">{t('payment.orderSummary')}</h2>
                   <span className="text-sm font-semibold text-wood-500">{t('payment.table', { mesa })}</span>
                 </div>
-                <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+                <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
                   {lines.map((line) => {
                     const terminoTexto = lineTerminosTexto(line, terminoLabel, (n) =>
                       t('customize.comensalSuffix', { n }),
@@ -474,7 +478,7 @@ export default function PaymentScreen({
                     return (
                     <div key={line.id} className="flex items-start justify-between gap-3 text-left">
                       <div className="flex-1">
-                        <p className="text-base font-semibold text-wood-900">
+                        <p className="text-sm font-semibold text-wood-900">
                           {line.quantity}x {line.variante ?? line.name}
                         </p>
                         {opcionMostrar && (
@@ -511,7 +515,7 @@ export default function PaymentScreen({
                     )
                   })}
                 </div>
-                <div className="mt-auto flex flex-col gap-1.5 border-t border-wood-100 pt-3">
+                <div className="mt-auto flex flex-col gap-1 border-t border-wood-100 pt-2">
                   <div className="flex items-center justify-between text-sm text-wood-600">
                     <span>{t('payment.subtotal')}</span>
                     <span>{formatCRC(subtotal)}</span>
@@ -520,20 +524,20 @@ export default function PaymentScreen({
                     <span>{t('payment.taxes')}</span>
                     <span>{formatCRC(impuestos)}</span>
                   </div>
-                  <div className="mt-1 flex items-center justify-between border-t border-wood-100 pt-3">
-                    <span className="text-base text-wood-600">
+                  <div className="mt-1 flex items-center justify-between border-t border-wood-100 pt-2">
+                    <span className="text-sm text-wood-600">
                       {cantidad === 1
                         ? t('payment.productSingular', { count: cantidad })
                         : t('payment.productPlural', { count: cantidad })}
                     </span>
-                    <PrecioConIvi monto={total} className="text-3xl font-bold text-wood-900" />
+                    <PrecioConIvi monto={total} className="text-2xl font-bold text-wood-900" />
                   </div>
                 </div>
               </section>
 
               {/* Columna derecha: ofrecimiento de más productos (sugerencias/upsell) */}
-              <section className="flex h-full min-h-0 flex-col gap-3 rounded-2xl bg-white p-5 shadow-sm shadow-wood-900/10">
-                <h2 className="text-lg font-bold text-wood-900">{t('payment.suggestionsTitle')}</h2>
+              <section className="flex h-full min-h-0 flex-col gap-2 rounded-2xl bg-white p-3 shadow-sm shadow-wood-900/10">
+                <h2 className="text-base font-bold text-wood-900">{t('payment.suggestionsTitle')}</h2>
                 <div className="grid min-h-0 flex-1 grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4">
                   {SUGERENCIAS.map((product) => (
                     <button
@@ -571,27 +575,27 @@ export default function PaymentScreen({
             </div>
 
             {/* Botones de pago: siempre al fondo de la página, uno al lado del otro y centrados. */}
-            <div className="mt-auto flex flex-col items-center gap-3 border-t border-wood-100 pt-6 text-center">
+            <div className="mt-auto flex shrink-0 flex-col items-center gap-2 border-t border-wood-100 pt-3 text-center">
               {estado === 'idle' && tipoPago === null && (
-                <div className="flex w-full max-w-3xl flex-col gap-3 sm:flex-row sm:justify-center">
+                <div className="flex w-full max-w-3xl flex-col gap-2 sm:flex-row sm:justify-center">
                   <button
                     type="button"
                     onClick={onSolicitarFactura}
-                    className="flex-1 rounded-2xl bg-brand-red px-6 py-4 text-base font-bold text-white shadow-lg shadow-black/20 transition-transform active:scale-95 sm:max-w-xs"
+                    className="flex-1 rounded-2xl bg-brand-red px-6 py-3 text-base font-bold text-white shadow-lg shadow-black/20 transition-transform active:scale-95 sm:max-w-xs"
                   >
                     {t('payment.payWithFactura')}
                   </button>
                   <button
                     type="button"
                     onClick={() => setTipoPago('simple')}
-                    className="flex-1 rounded-2xl bg-wood-900 px-6 py-4 text-base font-bold text-white shadow-md shadow-black/10 transition-transform active:scale-95 sm:max-w-xs"
+                    className="flex-1 rounded-2xl bg-wood-900 px-6 py-3 text-base font-bold text-white shadow-md shadow-black/10 transition-transform active:scale-95 sm:max-w-xs"
                   >
                     {t('payment.payWithoutFactura')}
                   </button>
                   <button
                     type="button"
                     onClick={handleCancelarOrden}
-                    className="flex-1 rounded-2xl border-2 border-wood-300 bg-transparent px-6 py-4 text-base font-bold text-wood-700 transition-transform active:scale-95 sm:max-w-xs"
+                    className="flex-1 rounded-2xl border-2 border-wood-300 bg-transparent px-6 py-3 text-base font-bold text-wood-700 transition-transform active:scale-95 sm:max-w-xs"
                   >
                     {t('payment.cancelarOrden')}
                   </button>
@@ -599,11 +603,11 @@ export default function PaymentScreen({
               )}
 
               {estado === 'idle' && tipoPago === 'simple' && (
-                <div className="flex w-full max-w-sm flex-col items-center gap-3">
+                <div className="flex w-full max-w-sm flex-col items-center gap-2">
                   <button
                     type="button"
                     onClick={handleCobrar}
-                    className="w-full rounded-2xl bg-brand-red px-16 py-6 text-2xl font-bold text-white shadow-2xl shadow-black/20 transition-transform active:scale-95"
+                    className="w-full rounded-2xl bg-brand-red px-16 py-4 text-xl font-bold text-white shadow-2xl shadow-black/20 transition-transform active:scale-95"
                   >
                     {t('payment.payWithCardReader')}
                   </button>
@@ -618,8 +622,8 @@ export default function PaymentScreen({
               )}
 
               {estado === 'idle' && tipoPago === 'factura' && cliente && (
-                <div className="flex w-full max-w-sm flex-col items-center gap-3">
-                  <div className="flex w-full items-center justify-between gap-3 rounded-xl bg-wood-100 px-4 py-3 text-left text-sm text-wood-700">
+                <div className="flex w-full max-w-sm flex-col items-center gap-2">
+                  <div className="flex w-full items-center justify-between gap-3 rounded-xl bg-wood-100 px-4 py-2.5 text-left text-sm text-wood-700">
                     <span>
                       {t('payment.facturaClienteLabel', { nombre: cliente.nombre, cedula: cliente.cedula })}
                     </span>
@@ -634,7 +638,7 @@ export default function PaymentScreen({
                   <button
                     type="button"
                     onClick={handleCobrar}
-                    className="w-full rounded-2xl bg-brand-red px-16 py-6 text-2xl font-bold text-white shadow-2xl shadow-black/20 transition-transform active:scale-95"
+                    className="w-full rounded-2xl bg-brand-red px-16 py-4 text-xl font-bold text-white shadow-2xl shadow-black/20 transition-transform active:scale-95"
                   >
                     {t('payment.payWithCardReader')}
                   </button>
@@ -642,9 +646,9 @@ export default function PaymentScreen({
               )}
 
               {estado === 'procesando' && (
-                <div className="flex flex-col items-center gap-4 py-2">
-                  <div className="h-16 w-16 animate-spin rounded-full border-4 border-wood-200 border-t-brand-red" />
-                  <p className="text-lg font-semibold text-wood-700">
+                <div className="flex flex-col items-center gap-3 py-1">
+                  <div className="h-12 w-12 animate-spin rounded-full border-4 border-wood-200 border-t-brand-red" />
+                  <p className="text-base font-semibold text-wood-700">
                     {t('payment.followInstructions')}
                   </p>
                 </div>
@@ -653,8 +657,8 @@ export default function PaymentScreen({
           </div>
         </main>
       ) : mesaCompartida ? (
-        <main className="flex flex-1 flex-col overflow-y-auto p-6">
-          <div className="mx-auto grid w-full max-w-5xl flex-1 grid-cols-1 items-center gap-6 md:grid-cols-2">
+        <main className="flex flex-1 flex-col overflow-y-auto p-4">
+          <div className="mx-auto grid w-full max-w-5xl flex-1 grid-cols-1 items-center gap-4 md:grid-cols-2">
             {/* Columna izquierda: confirmación del pago aprobado */}
             <section className="flex flex-col items-center gap-4 text-center">{contenidoConfirmacion}</section>
 
@@ -693,7 +697,7 @@ export default function PaymentScreen({
           </div>
         </main>
       ) : (
-        <main className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
+        <main className="flex flex-1 flex-col items-center justify-center gap-4 p-4 text-center">
           {contenidoConfirmacion}
         </main>
       )}

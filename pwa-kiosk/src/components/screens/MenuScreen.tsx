@@ -44,6 +44,13 @@ function detallesPersonalizacion(
 
 interface MenuScreenProps {
   onContinuarAlPago: () => void
+  /**
+   * Botón "Cancelar Orden" del header: descarta la orden en curso (antes de
+   * llegar a pago) y regresa a la pantalla de bienvenida. Ver `App.tsx`
+   * (`handleCancelarOrdenDesdeMenu`), que libera de inmediato el
+   * identificador de mesa (`mesaStore.cancelar`) y limpia el carrito.
+   */
+  onCancelarOrden: () => void
 }
 
 /**
@@ -58,7 +65,7 @@ interface MenuScreenProps {
  * siendo la única fuente de verdad, por lo que se actualiza automáticamente
  * en ambas columnas sin pasos adicionales.
  */
-export default function MenuScreen({ onContinuarAlPago }: MenuScreenProps) {
+export default function MenuScreen({ onContinuarAlPago, onCancelarOrden }: MenuScreenProps) {
   const { language, t, terminoLabel } = useLanguage()
   const [categoriaActiva, setCategoriaActiva] = useState<CategoryId>(CATEGORIES[0].id)
   const [productoPersonalizar, setProductoPersonalizar] = useState<Product | null>(null)
@@ -99,9 +106,24 @@ export default function MenuScreen({ onContinuarAlPago }: MenuScreenProps) {
           Carnes Don Fernando
         </span>
         <img src={logoBadge} alt="Carnes Don Fernando" className="h-14 w-14 sm:h-16 sm:w-16" />
-        <h1 className="absolute right-6 text-lg font-extrabold tracking-widest text-cream-50 sm:text-xl">
-          {t('catalog.menuTitle')}
-        </h1>
+        {/* Esquina superior derecha: "Cancelar Orden" a la par del título de
+            sección ("MENÚ"/"MENU"), agrupados en el mismo bloque para no
+            competir por el mismo `right-6` absoluto. Reutiliza el texto de
+            `payment.cancelarOrden` (misma acción "Cancelar Orden" que ya
+            existe en `PaymentScreen`, sólo que aquí corta el flujo antes,
+            desde el menú). */}
+        <div className="absolute right-6 flex items-center gap-3 sm:gap-4">
+          <button
+            type="button"
+            onClick={onCancelarOrden}
+            className="rounded-full border-2 border-cream-50/30 bg-transparent px-3 py-1.5 text-xs font-bold tracking-wide text-cream-50/80 uppercase transition-colors active:bg-white/10 sm:px-4 sm:py-2 sm:text-sm"
+          >
+            {t('payment.cancelarOrden')}
+          </button>
+          <h1 className="text-lg font-extrabold tracking-widest text-cream-50 sm:text-xl">
+            {t('catalog.menuTitle')}
+          </h1>
+        </div>
       </header>
 
       {/* Cuerpo: dos columnas en pantallas medianas+, apiladas en móvil */}
@@ -112,13 +134,15 @@ export default function MenuScreen({ onContinuarAlPago }: MenuScreenProps) {
             <h2 className="text-xl font-bold text-wood-900">{t('cart.title')}</h2>
           </div>
 
-          {/* ID de mesa: siempre fijo, elegido en MesaSetupScreen (lista de razas de ganado). */}
-          <div className="shrink-0 px-5 pt-4">
-            <div className="rounded-xl border-2 border-brand-red/30 bg-brand-red/5 px-4 py-3">
+          {/* ID de mesa: siempre fijo, elegido en MesaSetupScreen (lista de razas de ganado).
+              Box reducido (antes py-3/text-xl) para que ocupe menos espacio
+              vertical, dejando más lugar a la lista de líneas del pedido. */}
+          <div className="shrink-0 px-5 pt-3">
+            <div className="rounded-xl border-2 border-brand-red/30 bg-brand-red/5 px-4 py-2">
               <span className="block text-xs font-bold tracking-wide text-brand-red uppercase">
                 {t('cart.tableIdLabel')}
               </span>
-              <span className="block text-xl font-extrabold text-wood-900">{mesaId}</span>
+              <span className="block text-lg font-extrabold text-wood-900">{mesaId}</span>
             </div>
           </div>
 
@@ -226,7 +250,7 @@ export default function MenuScreen({ onContinuarAlPago }: MenuScreenProps) {
 
           {/* Grid de productos */}
           <div className="min-h-0 flex-1 overflow-y-auto p-6">
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
               {productos.map((product) => (
                 <ProductCard
                   key={product.id}

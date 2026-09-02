@@ -22,6 +22,7 @@ function App() {
   const setTipoPago = useCartStore((s) => s.setTipoPago)
   const iniciarMesa = useMesaStore((s) => s.iniciar)
   const cerrarMesa = useMesaStore((s) => s.cerrar)
+  const cancelarMesa = useMesaStore((s) => s.cancelar)
 
   const handleContinuarAlPago = () => {
     setScreen('payment')
@@ -61,6 +62,22 @@ function App() {
   /** Mesa compartida, "Sí, otra orden": misma mesa, carrito limpio, de vuelta al menú. */
   const handleNuevaOrdenMismaMesa = () => {
     setScreen('menu')
+  }
+
+  /**
+   * "Cancelar Orden" desde `MenuScreen` (antes de llegar a pago): libera de
+   * inmediato el identificador de mesa (`mesaStore.cancelar`, en vez de
+   * esperar los 30 minutos de bloqueo — mismo mecanismo que usa
+   * `PaymentScreen` para su propio "Cancelar Orden") y descarta el carrito
+   * en curso. A esta altura del flujo nunca se ha reservado un número de
+   * orden/consecutivo real (`generarConsecutivo()` sólo se llama al llegar
+   * a `PaymentScreen`), así que no hay nada más que "liberar" en ese sentido.
+   */
+  const handleCancelarOrdenDesdeMenu = () => {
+    cancelarMesa()
+    clearCart()
+    setLanguage('es')
+    setScreen('welcome')
   }
 
   const handleMesaSetupContinuar = (mesaId: string, compartida: boolean) => {
@@ -104,7 +121,7 @@ function App() {
   }
 
   if (screen === 'menu') {
-    return <MenuScreen onContinuarAlPago={handleContinuarAlPago} />
+    return <MenuScreen onContinuarAlPago={handleContinuarAlPago} onCancelarOrden={handleCancelarOrdenDesdeMenu} />
   }
 
   if (screen === 'mesaSetup') {

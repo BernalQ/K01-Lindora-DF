@@ -33,9 +33,9 @@ export default function ProductCard({ product, onPersonalizar }: ProductCardProp
 
       <ProductImage src={productImage(product)} alt={productDisplayName(product, language)} />
 
-      <div className={`flex flex-1 flex-col p-4 ${product.agotado ? 'opacity-60' : ''}`}>
-        <div className="flex flex-col gap-1">
-          <h3 className="text-base leading-tight font-semibold text-wood-900">
+      <div className={`flex flex-1 flex-col p-3 ${product.agotado ? 'opacity-60' : ''}`}>
+        <div className="flex flex-col gap-0.5">
+          <h3 className="text-sm leading-tight font-semibold text-wood-900">
             {productDisplayTitle(product, language)}
           </h3>
           {productDisplayDescription(product, language) && (
@@ -43,24 +43,24 @@ export default function ProductCard({ product, onPersonalizar }: ProductCardProp
               className={
                 product.descripcionResaltada
                   ? 'text-xs font-bold text-brand-red'
-                  : 'text-sm text-wood-600'
+                  : 'text-xs text-wood-600'
               }
             >
               {productDisplayDescription(product, language)}
             </p>
           )}
-          <PrecioConIvi monto={product.price} className="mt-1 text-lg font-bold text-brand-red" />
+          <PrecioConIvi monto={product.price} className="mt-1 text-base font-bold text-brand-red" />
         </div>
 
         {/* Botón "Agregar"/"Personalizar" siempre alineado al fondo del bloque,
             sin importar cuántas líneas ocupe el nombre/descripción arriba. */}
-        <div className="mt-auto pt-3">
+        <div className="mt-auto pt-2">
           {esPersonalizable ? (
             <button
               type="button"
               onClick={() => onPersonalizar(product)}
               disabled={product.agotado}
-              className="w-full rounded-xl bg-wood-900 py-3 text-base font-semibold text-cream-50 transition-transform active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100"
+              className="w-full rounded-xl bg-wood-900 py-2 text-sm font-semibold text-cream-50 transition-transform active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100"
             >
               {t('productCard.customize')}
             </button>
@@ -72,7 +72,7 @@ export default function ProductCard({ product, onPersonalizar }: ProductCardProp
               type="button"
               onClick={() => addSimpleItem(product, language)}
               disabled={product.agotado}
-              className="w-full rounded-xl bg-brand-red py-3 text-base font-semibold text-white transition-transform active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100"
+              className="w-full rounded-xl bg-brand-red py-2 text-sm font-semibold text-white transition-transform active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100"
             >
               {t('productCard.add')}
             </button>

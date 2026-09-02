@@ -3,15 +3,16 @@ interface ProductImageProps {
   alt: string
   className?: string
   /**
-   * 'default': tarjeta de producto del menú (180px). 'sm': miniatura
-   * compacta (56px). 'md': miniatura intermedia (96px), usada en las
-   * sugerencias de la pantalla de pago para mejorar su visibilidad sin
-   * llegar al tamaño de una tarjeta completa del menú. 'fill': ocupa el
-   * 100% del ancho del contenedor padre con proporción cuadrada fija
-   * (`aspect-square`), usada en los mini boxes de sugerencias de la
-   * pantalla de Revisión de Pedido para que la imagen se ajuste al tamaño
-   * real de cada box (según cuántas columnas entren en la grilla) y todas
-   * queden con el mismo tamaño relativo y la misma proporción entre sí.
+   * 'default': tarjeta de producto del menú (130px, antes 180px — reducido
+   * para que quepan más tarjetas visibles a la vez en la pantalla del
+   * kiosko). 'sm': miniatura compacta (56px). 'md': miniatura intermedia
+   * (96px), usada en las sugerencias de la pantalla de pago para mejorar su
+   * visibilidad sin llegar al tamaño de una tarjeta completa del menú.
+   * 'fill': ocupa el 100% del ancho del contenedor padre con proporción
+   * cuadrada fija (`aspect-square`), usada en los mini boxes de sugerencias
+   * de la pantalla de Revisión de Pedido para que la imagen se ajuste al
+   * tamaño real de cada box (según cuántas columnas entren en la grilla) y
+   * todas queden con el mismo tamaño relativo y la misma proporción entre sí.
    */
   size?: 'default' | 'sm' | 'md' | 'fill'
 }
@@ -19,7 +20,7 @@ interface ProductImageProps {
 /**
  * Foto de producto para el menú táctil.
  * - Contenedor de tamaño fijo (misma relación de aspecto y misma altura para
- *   todos los items, 180px por defecto, 56px en tamaño `sm`), con
+ *   todos los items, 130px por defecto, 56px en tamaño `sm`), con
  *   `object-contain` para que la foto se ajuste completa dentro del bloque
  *   sin recortes bruscos. Las fotos originales no comparten la misma
  *   proporción entre sí (algunas son más panorámicas, otras más cuadradas),
@@ -41,8 +42,8 @@ export default function ProductImage({ src, alt, className = '', size = 'default
         ? 'h-24 w-24 shrink-0 rounded-xl'
         : size === 'fill'
           ? 'aspect-square w-full rounded-xl'
-          : 'aspect-4/3 h-[180px] w-full'
-  const icono = size === 'sm' ? 'h-6 w-6' : size === 'md' || size === 'fill' ? 'h-10 w-10' : 'h-14 w-14'
+          : 'aspect-4/3 h-[130px] w-full'
+  const icono = size === 'sm' ? 'h-6 w-6' : size === 'md' || size === 'fill' ? 'h-10 w-10' : 'h-11 w-11'
 
   return (
     <div
