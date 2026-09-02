@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+*.local
+.DS_Store
+
+# Datos locales de facturación (contienen información personal de clientes:
+# cédula, correo, teléfono, dirección). Nunca deben subirse al repositorio.
+print-bridge/data/

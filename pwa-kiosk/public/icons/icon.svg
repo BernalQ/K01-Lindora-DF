@@ -1,0 +1,6 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="64" fill="#2b1c10"/>
+  <circle cx="256" cy="256" r="196" fill="none" stroke="#ac1f24" stroke-width="6"/>
+  <text x="256" y="240" font-family="Georgia, 'Times New Roman', serif" font-size="150" font-weight="600" fill="#f3e8d2" text-anchor="middle">DF</text>
+  <text x="256" y="330" font-family="Arial, sans-serif" font-size="34" letter-spacing="6" fill="#ac1f24" text-anchor="middle">DON FERNANDO</text>
+</svg>

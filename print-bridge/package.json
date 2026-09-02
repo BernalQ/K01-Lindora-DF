@@ -1,0 +1,30 @@
+{
+  "name": "print-bridge",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Servicio local (Windows 11 / M8W) que recibe pedidos de la PWA y los envía por ESC/POS a las 3 impresoras Vretti 80mm en red.",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "node-thermal-printer": "^4.4.4",
+    "nodemailer": "^6.9.16",
+    "pdfkit": "^0.15.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.2",
+    "@types/nodemailer": "^6.4.17",
+    "@types/pdfkit": "^0.13.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
