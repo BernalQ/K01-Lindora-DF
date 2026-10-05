@@ -87,6 +87,21 @@ export interface Product {
    * el cliente sepa que existe pero no está disponible por ahora.
    */
   agotado?: boolean
+  /**
+   * Código de artículo de Codisa, tomado de "Catalogo de articulos
+   * restaurante 2026" (ver `src/Catalogo de articulos restaurante
+   * 2026.xlsx`). Se usa únicamente para la integración con Codisa
+   * (`id_articulo` en `services/wsdf.ts`) y para control interno en
+   * `AdminScreen` — nunca se muestra al cliente en el menú ni en el
+   * carrito (ver `ProductCard`/`MenuScreen`, que no lo leen).
+   *
+   * Queda `undefined` en los productos que no tienen un código único y
+   * confiable en el documento fuente (ver comentarios junto a esos
+   * productos en `data/catalog.ts`): en ese caso, `services/wsdf.ts` usa
+   * el `id` interno del producto como `id_articulo` (fallback), para que
+   * el envío a Codisa nunca se rompa por falta de código.
+   */
+  codigoArticulo?: string
 }
 
 /**

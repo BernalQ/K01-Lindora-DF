@@ -1,4 +1,4 @@
-import { PRODUCTS, formatCRC, productDisplayName } from '../../data/catalog'
+import { formatCRC, nombreParaCodigoCodisa } from '../../data/catalog'
 import { useLanguage } from '../../context/LanguageContext'
 import type { Venta } from '../../types/order'
 import type { ValidacionWsDf, WsDfPayload } from '../../types/wsdf'
@@ -9,12 +9,6 @@ interface WsDfPopupProps {
   validacion: ValidacionWsDf
   onConfirmar: () => void
   onCancelar: () => void
-}
-
-/** Nombre legible de un artículo a partir de su `id_articulo` (= productId), con respaldo al ID crudo si no se encuentra en el catálogo. */
-function nombreArticulo(idArticulo: string, language: 'es' | 'en'): string {
-  const product = PRODUCTS.find((p) => p.id === idArticulo)
-  return product ? productDisplayName(product, language) : idArticulo
 }
 
 /**
@@ -96,7 +90,7 @@ export default function WsDfPopup({ venta, payload, validacion, onConfirmar, onC
                     {pedido.detalle.map((linea, i) => (
                       <tr key={i} className="border-t border-wood-100">
                         <td className="px-3 py-2 text-wood-900">
-                          {nombreArticulo(linea.id_articulo, language)}
+                          {nombreParaCodigoCodisa(linea.id_articulo, language)}
                         </td>
                         <td className="px-3 py-2 text-right text-wood-700">{linea.cantidad}</td>
                         <td className="px-3 py-2 text-right text-wood-700">

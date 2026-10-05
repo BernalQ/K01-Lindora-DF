@@ -36,5 +36,5 @@ export const RED_CONFIG = {
   /** Máscara de subred de las 3 impresoras (10.0.5.0/24). Sólo informativo. */
   mascaraSubred: '255.255.255.0',
   /** ip_gateway: punto de salida para JSON hacia AWS IoT Core y hacia Codisa. */
-  ipGateway: '10.0.5.1',
+  ipGateway: '10.0.5.250',
 } as const

@@ -1,4 +1,5 @@
 import { RED_CONFIG } from './redConfig'
+import { codigoArticuloParaCodisa } from '../data/catalog'
 import type { Venta } from '../types/order'
 import type { ValidacionWsDf, WsDfPayload } from '../types/wsdf'
 
@@ -36,7 +37,13 @@ export function construirPedidoWsDf(venta: Venta): WsDfPayload {
   const detalle = venta.items.map((item) => {
     const totalLinea = item.price * item.quantity
     return {
-      id_articulo: item.productId,
+      // Código de artículo Codisa: usa el código específico de la variante
+      // elegida cuando aplica (ej. "Gaseosa" vs "Tropical", o la marca de
+      // cerveza — ver `CODIGOS_POR_VARIANTE` en `data/catalog.ts`),
+      // si no `Product.codigoArticulo`, y como último respaldo el
+      // `productId` interno — así el envío a Codisa nunca se rompe por
+      // falta de código (ver `codigoArticuloParaCodisa`).
+      id_articulo: codigoArticuloParaCodisa(item.productId, item.variante),
       cantidad: String(item.quantity),
       precio: String(item.price),
       porc_desc: 0,

@@ -3,7 +3,8 @@ import { CATEGORIES, PRODUCTS, categoryDisplayName, formatCRC, productDisplayNam
 import { actualizarAgotado, actualizarPrecio } from '../../services/catalogOverrides'
 import { obtenerTodasLasVentas } from '../../services/offlineQueue'
 import { enviarTicket } from '../../services/printBridge'
-import { NOMBRES_IMPRESORA, generarTickets, type PrinterId } from '../../services/tickets'
+import { NOMBRES_IMPRESORA, generarTickets, ticketCierreCaja, type PrinterId, type TicketLine } from '../../services/tickets'
+import TicketPopup from '../ui/TicketPopup'
 import type { Product } from '../../types/catalog'
 import type { VentaEnCola } from '../../types/order'
 import { useLanguage } from '../../context/LanguageContext'
@@ -16,7 +17,7 @@ interface AdminScreenProps {
 const PIN_VALIDO = '123456'
 const LARGO_PIN = 6
 
-type VistaAdmin = 'menu' | 'precio' | 'agotado' | 'ordenes'
+type VistaAdmin = 'menu' | 'precio' | 'agotado' | 'ordenes' | 'cierre'
 
 /**
  * Pantalla de administración del kiosko, accesible desde el botón "ADMIN"
@@ -59,6 +60,7 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
         {vista === 'precio' && <PanelCambiarPrecio />}
         {vista === 'agotado' && <PanelMarcarAgotado />}
         {vista === 'ordenes' && <PanelOrdenesDelDia />}
+        {vista === 'cierre' && <PanelCierreCaja />}
       </main>
     </div>
   )
@@ -168,6 +170,7 @@ function MenuAdmin({ onSeleccionar }: { onSeleccionar: (vista: VistaAdmin) => vo
     { vista: 'precio', label: t('admin.menuCambiarPrecio') },
     { vista: 'agotado', label: t('admin.menuMarcarAgotado') },
     { vista: 'ordenes', label: t('admin.menuVerOrdenes') },
+    { vista: 'cierre', label: t('admin.menuCierreCaja') },
   ]
 
   return (
@@ -183,6 +186,22 @@ function MenuAdmin({ onSeleccionar }: { onSeleccionar: (vista: VistaAdmin) => vo
         </button>
       ))}
     </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Código de artículo (Codisa): sólo para control interno del admin,   */
+/* nunca se muestra en el menú visible al cliente (ver ProductCard).   */
+/* ------------------------------------------------------------------ */
+
+function CodigoArticulo({ product }: { product: Product }) {
+  const { t } = useLanguage()
+  return (
+    <span className="font-mono text-xs text-wood-400">
+      {product.codigoArticulo
+        ? t('admin.codigoArticulo', { codigo: product.codigoArticulo })
+        : t('admin.sinCodigoArticulo')}
+    </span>
   )
 }
 
@@ -220,7 +239,10 @@ function PanelCambiarPrecio() {
   if (seleccionado) {
     return (
       <div className="mx-auto flex max-w-md flex-col gap-5">
-        <h2 className="text-xl font-bold text-wood-900">{productDisplayName(seleccionado, language)}</h2>
+        <div className="flex flex-col gap-1">
+          <h2 className="text-xl font-bold text-wood-900">{productDisplayName(seleccionado, language)}</h2>
+          <CodigoArticulo product={seleccionado} />
+        </div>
         <p className="text-wood-600">{t('admin.precioActual', { precio: formatCRC(seleccionado.price) })}</p>
 
         <label className="flex flex-col gap-2">
@@ -280,7 +302,10 @@ function PanelCambiarPrecio() {
                   onClick={() => elegirProducto(product)}
                   className="flex items-center justify-between gap-3 px-4 py-3 text-left transition-colors active:bg-wood-50"
                 >
-                  <span className="font-semibold text-wood-900">{productDisplayName(product, language)}</span>
+                  <span className="flex flex-col">
+                    <span className="font-semibold text-wood-900">{productDisplayName(product, language)}</span>
+                    <CodigoArticulo product={product} />
+                  </span>
                   <span className="font-bold text-brand-red">{formatCRC(product.price)}</span>
                 </button>
               ))}
@@ -326,7 +351,10 @@ function PanelMarcarAgotado() {
                   onClick={() => alternar(product)}
                   className="flex items-center justify-between gap-3 px-4 py-3 text-left transition-colors active:bg-wood-50"
                 >
-                  <span className="font-semibold text-wood-900">{productDisplayName(product, language)}</span>
+                  <span className="flex flex-col">
+                    <span className="font-semibold text-wood-900">{productDisplayName(product, language)}</span>
+                    <CodigoArticulo product={product} />
+                  </span>
                   <span
                     className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-bold ${
                       product.agotado ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
@@ -388,9 +416,11 @@ function PanelOrdenesDelDia() {
               className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
             >
               <div className="flex flex-col">
-                <span className="font-bold text-wood-900">{t('admin.ordenesMesa', { mesa: venta.mesa })}</span>
+                <span className="font-bold text-wood-900">#{venta.id}</span>
                 <span className="text-sm text-wood-500">
                   {new Date(venta.fechaHora).toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}
+                  {' · '}
+                  {t('admin.ordenesMesa', { mesa: venta.mesa })}
                 </span>
               </div>
               <div className="flex items-center gap-3">
@@ -408,18 +438,42 @@ function PanelOrdenesDelDia() {
   )
 }
 
+/**
+ * Orden fija de los botones de reimpresión, según lo pedido por el kiosko:
+ * Cliente, Parrilla, Carnicería. `NOMBRES_IMPRESORA` (ver `services/tickets.ts`)
+ * mantiene su propio orden de declaración (carniceria/restaurante/cliente)
+ * por razones internas de ese archivo, así que acá se define un orden de
+ * visualización separado sin tocar esa constante compartida.
+ */
+const ORDEN_IMPRESION: PrinterId[] = ['cliente', 'restaurante', 'carniceria']
+
+/**
+ * Estado de un envío de impresión. `'error'` significa que print-bridge SÍ
+ * respondió pero la impresora física no (ver `enviarTicket` en
+ * `services/printBridge.ts`), distinto de `'simulado'` (print-bridge mismo
+ * no está corriendo, escenario normal en desarrollo sin hardware).
+ */
+type EstadoImpresion = 'enviando' | 'ok' | 'simulado' | 'error' | null
+
 function DetalleOrden({ venta }: { venta: VentaEnCola['venta'] }) {
   const { t } = useLanguage()
-  const [estadoEnvio, setEstadoEnvio] = useState<Record<PrinterId, 'enviando' | 'ok' | 'simulado' | null>>({
+  const [estadoEnvio, setEstadoEnvio] = useState<Record<PrinterId, EstadoImpresion>>({
     carniceria: null,
     restaurante: null,
     cliente: null,
   })
+  const [erroresEnvio, setErroresEnvio] = useState<Partial<Record<PrinterId, string>>>({})
 
   const imprimir = async (printer: PrinterId) => {
     setEstadoEnvio((prev) => ({ ...prev, [printer]: 'enviando' }))
+    setErroresEnvio((prev) => ({ ...prev, [printer]: undefined }))
     const tickets = generarTickets(venta)
     const resultado = await enviarTicket(printer, tickets[printer])
+    if (!resultado.ok) {
+      setEstadoEnvio((prev) => ({ ...prev, [printer]: 'error' }))
+      setErroresEnvio((prev) => ({ ...prev, [printer]: resultado.error ?? t('admin.ordenesError') }))
+      return
+    }
     setEstadoEnvio((prev) => ({ ...prev, [printer]: resultado.simulado ? 'simulado' : 'ok' }))
   }
 
@@ -439,7 +493,7 @@ function DetalleOrden({ venta }: { venta: VentaEnCola['venta'] }) {
 
       <h3 className="mb-2 text-sm font-bold tracking-wide text-wood-500 uppercase">{t('admin.ordenesImprimirEn')}</h3>
       <div className="flex flex-wrap gap-3">
-        {(Object.keys(NOMBRES_IMPRESORA) as PrinterId[]).map((printer) => {
+        {ORDEN_IMPRESION.map((printer) => {
           const estado = estadoEnvio[printer]
           return (
             <button
@@ -447,16 +501,131 @@ function DetalleOrden({ venta }: { venta: VentaEnCola['venta'] }) {
               type="button"
               onClick={() => imprimir(printer)}
               disabled={estado === 'enviando'}
-              className="rounded-xl bg-wood-900 px-4 py-2.5 text-sm font-semibold text-cream-50 transition-transform active:scale-95 disabled:opacity-50"
+              className={`rounded-xl px-4 py-2.5 text-sm font-semibold text-cream-50 transition-transform active:scale-95 disabled:opacity-50 ${
+                estado === 'error' ? 'bg-red-700' : 'bg-wood-900'
+              }`}
             >
               {NOMBRES_IMPRESORA[printer]}
               {estado === 'enviando' && ` · ${t('admin.ordenesEnviando')}`}
               {estado === 'ok' && ` · ${t('admin.ordenesEnviado')}`}
               {estado === 'simulado' && ` · ${t('admin.ordenesSimulado')}`}
+              {estado === 'error' && ` · ${t('admin.ordenesError')}`}
             </button>
           )
         })}
       </div>
+      {ORDEN_IMPRESION.map(
+        (printer) =>
+          erroresEnvio[printer] && (
+            <p key={printer} className="mt-2 text-xs font-semibold text-red-700">
+              {NOMBRES_IMPRESORA[printer]}: {erroresEnvio[printer]}
+            </p>
+          ),
+      )}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Panel: Cierre de caja — resume las ventas del día y envía el tiquete */
+/* de cierre (ver `ticketCierreCaja` en `services/tickets.ts`).         */
+/* ------------------------------------------------------------------ */
+
+function PanelCierreCaja() {
+  const { t } = useLanguage()
+  const [ventas, setVentas] = useState<VentaEnCola[] | null>(null)
+  const [estado, setEstado] = useState<EstadoImpresion>(null)
+  const [errorEnvio, setErrorEnvio] = useState<string | null>(null)
+  const [vistaPrevia, setVistaPrevia] = useState<TicketLine[] | null>(null)
+
+  useEffect(() => {
+    obtenerTodasLasVentas().then((todas) => {
+      const deHoy = todas
+        .filter((v) => esDeHoy(v.venta.fechaHora))
+        .sort((a, b) => a.venta.fechaHora.localeCompare(b.venta.fechaHora))
+      setVentas(deHoy)
+    })
+  }, [])
+
+  if (ventas === null) {
+    return <p className="text-center text-wood-500">{t('admin.cargando')}</p>
+  }
+
+  const total = ventas.reduce((suma, { venta }) => suma + venta.total, 0)
+
+  // Se imprime en la estación "Cliente" (caja/front), la más lógica para un
+  // tiquete de cierre dirigido al cajero, sin necesidad de agregar una
+  // estación nueva (ver `PrinterId` en `services/tickets.ts`).
+  const imprimirCierre = async () => {
+    setEstado('enviando')
+    setErrorEnvio(null)
+    const ticket = ticketCierreCaja(ventas.map((v) => v.venta))
+    const resultado = await enviarTicket('cliente', ticket)
+    if (!resultado.ok) {
+      setEstado('error')
+      setErrorEnvio(resultado.error ?? t('admin.ordenesError'))
+      return
+    }
+    setEstado(resultado.simulado ? 'simulado' : 'ok')
+  }
+
+  return (
+    <div className="mx-auto flex max-w-2xl flex-col gap-6">
+      <h2 className="text-lg font-bold text-wood-900">{t('admin.cierreTitle')}</h2>
+
+      {ventas.length === 0 ? (
+        <p className="text-center text-wood-500">{t('admin.ordenesVacio')}</p>
+      ) : (
+        <div className="flex flex-col divide-y divide-wood-100 rounded-xl bg-white shadow-sm shadow-wood-900/5">
+          {ventas.map(({ venta }) => (
+            <div key={venta.id} className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="font-mono text-sm text-wood-700">#{venta.id}</span>
+              <span className="font-semibold text-wood-900">{formatCRC(venta.total)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between rounded-xl bg-wood-900 px-5 py-4">
+        <span className="text-sm font-bold tracking-wide text-cream-100 uppercase">{t('admin.cierreTotal')}</span>
+        <span className="text-xl font-extrabold text-cream-50">{formatCRC(total)}</span>
+      </div>
+
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={() => setVistaPrevia(ticketCierreCaja(ventas.map((v) => v.venta)))}
+          disabled={ventas.length === 0}
+          className="flex-1 rounded-2xl bg-wood-100 py-4 text-base font-bold text-wood-800 transition-transform active:scale-98 disabled:opacity-50"
+        >
+          {t('admin.cierreVistaPrevia')}
+        </button>
+        <button
+          type="button"
+          onClick={imprimirCierre}
+          disabled={estado === 'enviando' || ventas.length === 0}
+          className={`flex-1 rounded-2xl py-4 text-base font-bold text-white transition-transform active:scale-98 disabled:opacity-50 ${
+            estado === 'error' ? 'bg-red-700' : 'bg-brand-red'
+          }`}
+        >
+          {t('admin.cierreImprimir')}
+          {estado === 'enviando' && ` · ${t('admin.ordenesEnviando')}`}
+          {estado === 'ok' && ` · ${t('admin.ordenesEnviado')}`}
+          {estado === 'simulado' && ` · ${t('admin.ordenesSimulado')}`}
+          {estado === 'error' && ` · ${t('admin.ordenesError')}`}
+        </button>
+      </div>
+
+      {errorEnvio && <p className="text-center text-sm font-semibold text-red-700">{errorEnvio}</p>}
+
+      {vistaPrevia && (
+        <TicketPopup
+          titulo={t('admin.cierreTitle')}
+          secciones={[{ titulo: NOMBRES_IMPRESORA.cliente, lineas: vistaPrevia }]}
+          textoBoton={t('common.cerrar')}
+          onCerrar={() => setVistaPrevia(null)}
+        />
+      )}
     </div>
   )
 }

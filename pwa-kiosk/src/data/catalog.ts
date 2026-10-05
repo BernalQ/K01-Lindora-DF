@@ -10,6 +10,13 @@ export const CATEGORIES: Category[] = [
   { id: 'sobremesa', name: 'Sobremesa', nameEn: 'Dessert' },
 ]
 
+/**
+ * Códigos de artículo (Codisa) tomados de "Catalogo de articulos
+ * restaurante 2026" (`src/Catalogo de articulos restaurante 2026.xlsx`),
+ * columna "Código Artículo" de cada bloque de categoría. Ver
+ * `Product.codigoArticulo` para el porqué (integración WS DF / control
+ * interno en `AdminScreen`, nunca visible al cliente).
+ */
 export const PRODUCTS: Product[] = [
   // A la parrilla
   {
@@ -20,6 +27,7 @@ export const PRODUCTS: Product[] = [
     price: 7400,
     requiresTermino: true,
     includedGuarniciones: 1,
+    codigoArticulo: '4405',
   },
   {
     id: 'new-york-250',
@@ -29,6 +37,7 @@ export const PRODUCTS: Product[] = [
     price: 7400,
     requiresTermino: true,
     includedGuarniciones: 1,
+    codigoArticulo: '4406',
   },
   {
     id: 'churrasco-400',
@@ -38,6 +47,7 @@ export const PRODUCTS: Product[] = [
     price: 8490,
     requiresTermino: true,
     includedGuarniciones: 1,
+    codigoArticulo: '4407',
   },
   {
     id: 'sirloin-600',
@@ -47,6 +57,7 @@ export const PRODUCTS: Product[] = [
     price: 9490,
     requiresTermino: true,
     includedGuarniciones: 1,
+    codigoArticulo: '2923',
   },
   {
     id: 'lomito-250',
@@ -56,6 +67,7 @@ export const PRODUCTS: Product[] = [
     price: 9600,
     requiresTermino: true,
     includedGuarniciones: 1,
+    codigoArticulo: '4415',
   },
   {
     id: 'pechuga-pollo-250',
@@ -65,6 +77,7 @@ export const PRODUCTS: Product[] = [
     price: 6100,
     requiresTermino: true,
     includedGuarniciones: 1,
+    codigoArticulo: '4409',
   },
   {
     id: 'salmon-250',
@@ -74,6 +87,7 @@ export const PRODUCTS: Product[] = [
     price: 9600,
     requiresTermino: true,
     includedGuarniciones: 1,
+    codigoArticulo: '4418',
   },
   {
     id: 'hamburguesa-sirloin',
@@ -86,6 +100,7 @@ export const PRODUCTS: Product[] = [
     requiresTermino: true,
     includedGuarniciones: 0,
     extras: ['Sin Queso', 'Sin Lechuga', 'Sin Tocineta'],
+    codigoArticulo: '4419',
   },
   {
     id: 'parrillada-mixta-2',
@@ -98,6 +113,7 @@ export const PRODUCTS: Product[] = [
     requiresTermino: true,
     comensales: 2,
     includedGuarniciones: 2,
+    codigoArticulo: '4404',
   },
 
   // Guarniciones
@@ -110,6 +126,7 @@ export const PRODUCTS: Product[] = [
     requiresTermino: false,
     includedGuarniciones: 0,
     opcionUnica: ['Con Natilla', 'Con Mantequilla', 'Sin Natilla ni Mantequilla', 'Natilla aparte'],
+    codigoArticulo: '4211',
   },
   {
     id: 'ensalada-jardinera',
@@ -123,6 +140,7 @@ export const PRODUCTS: Product[] = [
     includedGuarniciones: 0,
     opcionUnica: ['Con Aderezo', 'Sin Aderezo'],
     opcionPorDefecto: 'Con Aderezo',
+    codigoArticulo: '4212',
   },
   {
     id: 'arroz-blanco',
@@ -132,6 +150,7 @@ export const PRODUCTS: Product[] = [
     price: 1000,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '12001',
   },
   {
     id: 'yuca-moho',
@@ -141,6 +160,7 @@ export const PRODUCTS: Product[] = [
     price: 2000,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '12016',
   },
   {
     id: 'vegetales-juliana',
@@ -152,6 +172,7 @@ export const PRODUCTS: Product[] = [
     descriptionEn: 'New',
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '12011',
   },
 
   // Para comenzar
@@ -163,6 +184,7 @@ export const PRODUCTS: Product[] = [
     price: 1600,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '4400',
   },
   {
     id: 'choripan',
@@ -174,6 +196,7 @@ export const PRODUCTS: Product[] = [
     includedGuarniciones: 0,
     opcionUnica: ['Con Chimichurri', 'Sin Chimichurri', 'Chimichurri aparte'],
     opcionPorDefecto: 'Con Chimichurri',
+    codigoArticulo: '4410',
   },
   {
     id: 'chicharron-carne',
@@ -183,6 +206,7 @@ export const PRODUCTS: Product[] = [
     price: 3800,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '2298',
   },
   {
     id: 'chicharron-panza',
@@ -192,6 +216,7 @@ export const PRODUCTS: Product[] = [
     price: 4800,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '2299',
   },
   {
     id: 'queso-provolone',
@@ -201,8 +226,18 @@ export const PRODUCTS: Product[] = [
     price: 4100,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '4510',
   },
   {
+    // Sin código: el documento fuente ("Catalogo de articulos restaurante
+    // 2026") repite el código "4400" tanto para "Gallo de Chorizo" como
+    // para "Pan Parrillero" (ver fila de Pan Parrillero en el bloque "Para
+    // Comenzar" del xlsx) — parece un error de digitación en el origen, ya
+    // que un mismo código de artículo no puede identificar dos productos
+    // distintos ante Codisa. Se deja sin `codigoArticulo` a propósito
+    // (en vez de asumir el 4400 y arriesgar una venta mal clasificada) hasta
+    // que el restaurante confirme el código real; mientras tanto, el envío
+    // a Codisa usa el `id` interno como respaldo (ver `services/wsdf.ts`).
     id: 'pan-parrillero',
     categoryId: 'comenzar',
     name: 'Pan Parrillero',
@@ -220,6 +255,7 @@ export const PRODUCTS: Product[] = [
     requiresTermino: false,
     includedGuarniciones: 0,
     opcionUnica: ['Con Mantequilla', 'Sin Mantequilla'],
+    codigoArticulo: '12003',
   },
   {
     id: 'ensalada-griega',
@@ -231,6 +267,7 @@ export const PRODUCTS: Product[] = [
     includedGuarniciones: 0,
     opcionUnica: ['Con Aderezo', 'Sin Aderezo'],
     opcionPorDefecto: 'Con Aderezo',
+    codigoArticulo: '2728',
   },
   {
     id: 'hongos-tomate-tocineta',
@@ -240,10 +277,21 @@ export const PRODUCTS: Product[] = [
     price: 2800,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '2729',
   },
 
   // Bebidas
   {
+    // `variantes` activa el pop-up de personalización (`VarianteBody` en
+    // `PersonalizarModal`): el cliente elige cantidad de Gaseosa y/o
+    // cantidad de Tropical por separado (stepper independiente por
+    // opción), y se agrega una línea del carrito por cada una con su
+    // propia cantidad (ver `construirLineasVariante`). El producto en sí
+    // queda sin `codigoArticulo` (no representa un artículo real de
+    // Codisa) porque el código correcto depende de la variante elegida —
+    // ver `CODIGOS_POR_VARIANTE` más abajo, consultado por
+    // `codigoArticuloParaCodisa(productId, variante)` antes de caer al
+    // `id` interno como respaldo (ver `services/wsdf.ts`).
     id: 'gaseosa-tropical',
     categoryId: 'bebidas',
     name: 'Gaseosa o Tropical',
@@ -251,6 +299,7 @@ export const PRODUCTS: Product[] = [
     price: 1100,
     requiresTermino: false,
     includedGuarniciones: 0,
+    variantes: ['Gaseosa', 'Tropical'],
   },
   {
     id: 'cerveza-nacional',
@@ -260,20 +309,34 @@ export const PRODUCTS: Product[] = [
     price: 1750,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '4001',
   },
   {
+    // `variantes` activa el pop-up de personalización (`VarianteBody`): el
+    // cliente elige cantidad por marca (Heineken, Corona, Bavaria,
+    // Peroni), con stepper independiente por opción, y se agrega una línea
+    // del carrito por cada marca elegida con su propia cantidad (ver
+    // `construirLineasVariante`). "Modelo" queda fuera de las opciones
+    // seleccionables (no estaba en la lista pedida para este pop-up), por
+    // lo que se retiró también de la descripción visible en la tarjeta del
+    // menú para no anunciar una marca que no puede pedirse. El producto en
+    // sí queda sin `codigoArticulo` porque el código correcto depende de
+    // la marca elegida — ver `CODIGOS_POR_VARIANTE` más abajo, consultado
+    // por `codigoArticuloParaCodisa(productId, variante)` antes de caer al
+    // `id` interno como respaldo (ver `services/wsdf.ts`).
     id: 'cerveza-bavaria-heineken-corona',
     categoryId: 'bebidas',
     name: 'Cerveza Premium',
     nameEn: 'Premium Beer',
     nombreMenu: 'Cerveza Importada',
     nombreMenuEn: 'Imported Beer',
-    description: 'Heineken, Bavaria, Corona, Modelo, Peroni',
-    descriptionEn: 'Heineken, Bavaria, Corona, Modelo, Peroni',
+    description: 'Heineken, Corona, Bavaria, Peroni',
+    descriptionEn: 'Heineken, Corona, Bavaria, Peroni',
     descripcionResaltada: true,
     price: 2000,
     requiresTermino: false,
     includedGuarniciones: 0,
+    variantes: ['Heineken', 'Corona', 'Bavaria', 'Peroni'],
   },
   {
     id: 'vino-altos-hormigas-malbec-375',
@@ -283,6 +346,7 @@ export const PRODUCTS: Product[] = [
     price: 8080,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '4357',
   },
   {
     id: 'vino-maison-castel-cabernet-187',
@@ -292,6 +356,7 @@ export const PRODUCTS: Product[] = [
     price: 3500,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '2455',
   },
   {
     id: 'vino-maison-castel-chardonnay-187',
@@ -301,6 +366,7 @@ export const PRODUCTS: Product[] = [
     price: 3500,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '2456',
   },
   {
     id: 'vino-la-danza-malbec-750',
@@ -310,6 +376,7 @@ export const PRODUCTS: Product[] = [
     price: 12010,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '4356',
   },
   {
     id: 'vino-muga-rosado-750',
@@ -319,6 +386,7 @@ export const PRODUCTS: Product[] = [
     price: 13260,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '4305',
   },
   {
     id: 'agua-san-pellegrino-500',
@@ -328,6 +396,7 @@ export const PRODUCTS: Product[] = [
     price: 2600,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '4156',
   },
   {
     id: 'agua-natural-panna-500',
@@ -337,6 +406,7 @@ export const PRODUCTS: Product[] = [
     price: 2150,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '4511',
   },
 
   // Sobremesa
@@ -348,6 +418,7 @@ export const PRODUCTS: Product[] = [
     price: 1800,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '4452',
   },
   {
     id: 'cafe-espresso',
@@ -357,6 +428,7 @@ export const PRODUCTS: Product[] = [
     price: 1500,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '4453',
   },
   {
     id: 'leche-asada',
@@ -366,6 +438,7 @@ export const PRODUCTS: Product[] = [
     price: 1500,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '4102',
   },
   {
     id: 'pie-pecanas',
@@ -375,6 +448,7 @@ export const PRODUCTS: Product[] = [
     price: 2900,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '2857',
   },
 ]
 
@@ -399,6 +473,69 @@ export function productImage(product: Product): string | undefined {
 
 export function formatCRC(amount: number): string {
   return `₡${amount.toLocaleString('es-CR')}`
+}
+
+/**
+ * Códigos Codisa por variante, para productos de menú que agrupan varios
+ * artículos reales de Codisa bajo una sola tarjeta con pop-up de
+ * personalización (`variantes` en `Product`, ver `gaseosa-tropical` y
+ * `cerveza-bavaria-heineken-corona` arriba). Cada `CartLine` generada por
+ * `VarianteBody`/`construirLineasVariante` guarda la opción elegida en
+ * `line.variante` (ej. "Gaseosa", "Heineken"), así que `(productId,
+ * variante)` identifica el artículo real que hay que reportarle a Codisa.
+ * Tomado de "Catalogo de articulos restaurante 2026" (mismo origen que
+ * `Product.codigoArticulo`, ver ese campo).
+ */
+const CODIGOS_POR_VARIANTE: Record<string, Record<string, string>> = {
+  'gaseosa-tropical': {
+    Gaseosa: '4152',
+    Tropical: '4157',
+  },
+  'cerveza-bavaria-heineken-corona': {
+    Heineken: '4005',
+    Corona: '4003',
+    Bavaria: '4002',
+    Peroni: '4000',
+  },
+}
+
+/**
+ * Código de artículo a enviar a Codisa (`id_articulo` en
+ * `services/wsdf.ts`) para una línea del carrito, dada su `productId` y,
+ * si aplica, la `variante` elegida (ej. "Gaseosa" vs "Tropical", o la
+ * marca de cerveza — ver `CODIGOS_POR_VARIANTE`). Orden de resolución:
+ * 1. Código por variante (`CODIGOS_POR_VARIANTE[productId][variante]`).
+ * 2. `Product.codigoArticulo` del producto (cuando no hay variante o la
+ *    variante no tiene código propio).
+ * 3. El propio `productId` como último respaldo, para que el envío a
+ *    Codisa nunca se rompa por falta de código.
+ */
+export function codigoArticuloParaCodisa(productId: string, variante?: string): string {
+  if (variante) {
+    const codigoVariante = CODIGOS_POR_VARIANTE[productId]?.[variante]
+    if (codigoVariante) return codigoVariante
+  }
+  const product = PRODUCTS.find((p) => p.id === productId)
+  return product?.codigoArticulo ?? productId
+}
+
+/**
+ * Nombre legible para un `id_articulo` tal como se envía a Codisa (usado
+ * por el pop-up de verificación `WsDfPopup`): busca primero entre los
+ * códigos por variante (ej. "4005" → "Heineken"), luego por
+ * `Product.codigoArticulo`, y finalmente por `id` de producto (caso en que
+ * el código cayó al respaldo del `productId`, ver
+ * `codigoArticuloParaCodisa`). Si no encuentra nada, devuelve el valor
+ * crudo.
+ */
+export function nombreParaCodigoCodisa(idArticulo: string, language: Language): string {
+  for (const codigosDelProducto of Object.values(CODIGOS_POR_VARIANTE)) {
+    const variante = Object.entries(codigosDelProducto).find(([, codigo]) => codigo === idArticulo)?.[0]
+    if (variante) return variante
+  }
+  const product =
+    PRODUCTS.find((p) => p.codigoArticulo === idArticulo) ?? PRODUCTS.find((p) => p.id === idArticulo)
+  return product ? productDisplayName(product, language) : idArticulo
 }
 
 /**

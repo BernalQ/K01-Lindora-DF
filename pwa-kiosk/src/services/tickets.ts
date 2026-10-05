@@ -459,6 +459,38 @@ export function ticketCliente(venta: Venta): TicketLine[] {
   return lineas
 }
 
+/**
+ * Tiquete de cierre de caja: resumen de todas las ventas del día, generado
+ * bajo demanda desde el panel de administración (botón "Cierre de Caja",
+ * ver `AdminScreen.tsx` -> `PanelCierreCaja`). Lista cada orden con su monto
+ * pagado y termina con el total acumulado del día.
+ *
+ * La fecha/hora que se imprime es la del momento en que se solicita el
+ * cierre (`new Date()` al generar el ticket), no la de cada orden
+ * individual — es el dato que pide el requerimiento del kiosko para saber
+ * cuándo se hizo el corte, independientemente de la hora de cada venta.
+ */
+export function ticketCierreCaja(ordenes: Venta[]): TicketLine[] {
+  const lineas: TicketLine[] = [
+    'CARNES DON FERNANDO',
+    { text: '*** CIERRE DE CAJA ***', bold: true },
+    new Date().toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'medium' }),
+    SEPARADOR,
+  ]
+
+  let total = 0
+  for (const venta of ordenes) {
+    total += venta.total
+    lineas.push(...lineaConMonto(`Orden ${venta.id}`, formatCRC(venta.total)))
+  }
+
+  lineas.push(SEPARADOR)
+  lineas.push(...lineaConMonto('TOTAL:', formatCRC(total)))
+  lineas.push('')
+  lineas.push(`Cantidad de ordenes: ${ordenes.length}`)
+  return lineas
+}
+
 export function generarTickets(venta: Venta): Record<PrinterId, TicketLine[]> {
   return {
     carniceria: ticketCarniceria(venta),

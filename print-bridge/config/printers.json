@@ -1,0 +1,11 @@
+{
+  "_comentario": "Configuración de las 3 impresoras térmicas ZKTeco (ESC/POS sobre TCP, puerto 9100) del kiosko. Editar este archivo y reiniciar el servicio print-bridge es suficiente para cambiar una IP/puerto — no requiere tocar código ni volver a compilar. Ver print-bridge/src/printers/config.ts (que lee este archivo) y pwa-kiosk/src/services/redConfig.ts (copia informativa del mismo plan de IPs, usada por el navegador para construir el endpoint de Codisa).",
+  "protocolo": "ESC/POS",
+  "gatewayIp": "10.0.5.250",
+  "mascaraSubred": "255.255.255.0",
+  "impresoras": {
+    "cliente": { "ip": "10.0.5.247", "puerto": 9100 },
+    "carniceria": { "ip": "10.0.5.248", "puerto": 9100 },
+    "restaurante": { "ip": "10.0.5.249", "puerto": 9100 }
+  }
+}
