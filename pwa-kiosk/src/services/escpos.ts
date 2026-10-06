@@ -26,17 +26,30 @@ import logoTermicoUrl from '../assets/logo/logo-resta-termico.png'
  * `node-thermal-printer`/`print.ts` (ver `epson-config.js` del paquete, y
  * `core.js` -> `cut()`/`setTextDoubleHeight()`/`setTextDoubleWidth()`), para
  * que el comportamiento en la impresora real no cambie.
+ *
+ * Ajustes específicos para la impresora real del kiosko (ZKTeco ZKP8016),
+ * agregados sobre esa base original:
+ * - `ESC t 0` al inicio de cada ticket, para fijar explícitamente la code
+ *   page CP437 (en vez de asumir que ya es la tabla activa por defecto).
+ * - El comprobante de cliente centra el encabezado (logo + datos del
+ *   negocio) pero cambia a alineación izquierda (`ESC a 0`) para el detalle
+ *   de productos — ver `MARCADOR_FIN_ENCABEZADO`.
+ * - Avance extra de papel en blanco (`ESC d 5`) antes del corte en todo
+ *   ticket, para que no se pierda texto al arrancar — ver `FEED_EXTRA_FINAL`.
  */
 
 // --- Comandos ESC/POS (mismos bytes que epson-config.js de node-thermal-printer) ---
 const HW_INIT = [0x1b, 0x40] // ESC @ — reset
-const TXT_ALIGN_CT = [0x1b, 0x61, 0x01] // ESC a 1 — centrar (todo el ticket se imprime centrado, igual que print.ts)
+const SEL_CODEPAGE_CP437 = [0x1b, 0x74, 0x00] // ESC t 0 — selecciona explícitamente la tabla de caracteres CP437 (n=0), para que el ₡/acentos de abajo se interpreten como se espera en la ZKTeco ZKP8016
+const TXT_ALIGN_CT = [0x1b, 0x61, 0x01] // ESC a 1 — centrar
+const TXT_ALIGN_LT = [0x1b, 0x61, 0x00] // ESC a 0 — alinear a la izquierda (usado para el detalle de productos del comprobante de cliente, ver MARCADOR_FIN_ENCABEZADO)
 const TXT_BOLD_ON = [0x1b, 0x45, 0x01] // ESC E 1
 const TXT_BOLD_OFF = [0x1b, 0x45, 0x00] // ESC E 0
 const TXT_2HEIGHT = [0x1b, 0x21, 0x10] // ESC ! 0x10 — doble alto
 const TXT_2WIDTH = [0x1b, 0x21, 0x20] // ESC ! 0x20 — doble ancho
 const TXT_NORMAL = [0x1b, 0x21, 0x00] // ESC ! 0 — texto normal
-const CTL_VT = [0x1b, 0x64, 0x04] // ESC d 4 — avance vertical antes del corte
+const CTL_VT = [0x1b, 0x64, 0x04] // ESC d 4 — avance vertical antes del corte (secuencia original de node-thermal-printer, se conserva para no alterar el resto de la secuencia de corte)
+const FEED_EXTRA_FINAL = [0x1b, 0x64, 0x05] // ESC d 5 — avance extra de 5 líneas en blanco al final de todo ticket, antes del corte, para que el usuario no arranque el papel sobre texto todavía útil
 const PAPER_FULL_CUT = [0x1d, 0x56, 0x00] // GS V 0 — corte completo
 const LF = 0x0a
 
@@ -50,27 +63,50 @@ const LF = 0x0a
 const MARCADOR_LOGO: TicketLine = 'Logo Resta'
 
 /**
+ * Texto literal que `encabezadoCliente` (ver `services/tickets.ts`) agrega
+ * como última línea del bloque de encabezado (logo + nombre + slogan +
+ * contacto), para marcar dónde ese bloque termina. `construirBufferTicket`
+ * reconoce esta línea, la omite del texto impreso y en su lugar emite
+ * `TXT_ALIGN_LT` (ESC a 0), para que el encabezado salga centrado pero el
+ * detalle de productos que sigue (precios, guarniciones, etc.) salga
+ * alineado a la izquierda. Mismo patrón que `MARCADOR_LOGO` arriba.
+ */
+const MARCADOR_FIN_ENCABEZADO: TicketLine = 'Fin Encabezado'
+
+/**
  * Subconjunto de CP437 (code page por defecto de la mayoría de impresoras
  * ESC/POS, incluyendo las ZKTeco del kiosko) necesario para los acentos y
  * símbolos que de verdad aparecen en los tickets (ver nombres de producto en
  * `data/catalog.ts` y textos fijos en `tickets.ts`). Los códigos 0-127 son
  * idénticos a ASCII, así que no necesitan tabla.
  *
- * Limitación conocida: CP437 no tiene el signo de colón (₡) ni mayúsculas
- * acentuadas (Á/Í/Ó/Ú, salvo É). El colón se aproxima con 'c' minúscula
- * (confirmado con el cliente: aceptable para la impresora ZKTeco ZKP8016 del
- * kiosko). Las mayúsculas acentuadas no mapeadas en CP437 se resuelven
- * quitándoles la tilde (Á→A, Í→I, Ó→O, Ú→U, ver `MAPA_SIN_TILDE` abajo) en
- * vez de caer en '?' — también confirmado con el cliente. Si la impresora
- * real usa otra code page (ej. WPC1252/CP858, que sí trae ₡-adyacentes),
- * ajustar este mapa — no afecta la estructura del resto del protocolo.
+ * Limitación conocida: el estándar CP437 no tiene el signo de colón (₡) ni
+ * mayúsculas acentuadas (Á/Í/Ó/Ú, salvo É).
+ *
+ * Para el colón, la ZKTeco ZKP8016 del kiosko se confirmó con el byte
+ * `0xA2` (en vez de la aproximación anterior con 'c' minúscula) — ver el
+ * `else if (char === '₡')` en `codificarTexto` abajo. OJO: en la tabla CP437
+ * estándar, `0xA2` es 'ó' (ya mapeada en este mismo objeto, abajo), así que
+ * hay una colisión deliberada de byte: si la ZKP8016 usa CP437 estándar para
+ * ese code point, "₡" y "ó" se imprimirían como el mismo glyph. Se deja así
+ * porque fue la asignación pedida/validada para esta impresora; si en la
+ * práctica se ve 'ó' en vez del símbolo de colón, hay que revisar la tabla de
+ * caracteres real de la ZKP8016 (ver también `SEL_CODEPAGE_CP437`/`ESC t 0`
+ * en las constantes de arriba, que fija explícitamente la tabla 0 al iniciar
+ * el ticket).
+ *
+ * Las mayúsculas acentuadas no mapeadas en CP437 se resuelven quitándoles la
+ * tilde (Á→A, Í→I, Ó→O, Ú→U, ver `MAPA_SIN_TILDE` abajo) en vez de caer en
+ * '?' — confirmado con el cliente. Si la impresora real usa otra code page
+ * (ej. WPC1252/CP858), ajustar este mapa — no afecta la estructura del resto
+ * del protocolo.
  */
 const MAPA_CP437: Record<string, number> = {
   ü: 0x81,
   é: 0x82,
   á: 0xa0,
   í: 0xa1,
-  ó: 0xa2,
+  ó: 0xa2, // ver nota de colisión con '₡' arriba
   ú: 0xa3,
   ñ: 0xa4,
   Ñ: 0xa5,
@@ -111,7 +147,7 @@ function codificarTexto(texto: string): number[] {
       // CP437, a un espacio normal (0x20); de lo contrario saldría como '?'.
       bytes.push(0x20)
     } else if (char === '₡') {
-      bytes.push(0x63) // aproximación legible ('c'), ver limitación documentada arriba
+      bytes.push(0xa2) // byte confirmado para la ZKTeco ZKP8016, ver nota de colisión con 'ó' documentada arriba
     } else if (MAPA_CP437[char] !== undefined) {
       bytes.push(MAPA_CP437[char])
     } else if (MAPA_SIN_TILDE[char] !== undefined) {
@@ -215,15 +251,19 @@ export interface OpcionesBufferTicket {
 }
 
 /**
- * Construye el buffer ESC/POS completo de un ticket: init, alinear al
- * centro (igual que `print.ts`, que centra todo el comprobante), logo
- * embebido opcional, cada línea con sus estilos, y el corte de papel final.
+ * Construye el buffer ESC/POS completo de un ticket: init + selección
+ * explícita de code page CP437 (`ESC t 0`), alinear al centro para el
+ * encabezado (logo + nombre + slogan + contacto, igual que `print.ts`),
+ * logo embebido opcional, cada línea con sus estilos — con un cambio a
+ * alineación izquierda (`ESC a 0`) justo antes del detalle de productos en
+ * el comprobante de cliente (ver `MARCADOR_FIN_ENCABEZADO`) —, avance extra
+ * de papel en blanco (`ESC d 5`) y el corte final.
  */
 export async function construirBufferTicket(
   lines: TicketLine[],
   opciones: OpcionesBufferTicket = {},
 ): Promise<Uint8Array> {
-  const partes: (number[] | Uint8Array)[] = [HW_INIT, TXT_ALIGN_CT]
+  const partes: (number[] | Uint8Array)[] = [HW_INIT, SEL_CODEPAGE_CP437, TXT_ALIGN_CT]
 
   if (opciones.incluirLogo) {
     partes.push(await generarRasterLogo())
@@ -231,10 +271,18 @@ export async function construirBufferTicket(
 
   for (const line of lines) {
     if (opciones.incluirLogo && line === MARCADOR_LOGO) continue
+    if (line === MARCADOR_FIN_ENCABEZADO) {
+      partes.push(TXT_ALIGN_LT)
+      continue
+    }
     agregarLinea(partes, line)
   }
 
-  partes.push(CTL_VT, CTL_VT, PAPER_FULL_CUT, HW_INIT)
+  // Avance extra de 5 líneas en blanco antes del corte (además del avance de
+  // 4 líneas x2 que ya hacía `cut()` en node-thermal-printer, ver CTL_VT más
+  // arriba), para que al arrancar el papel el usuario no se lleve texto
+  // todavía útil del comprobante.
+  partes.push(FEED_EXTRA_FINAL, CTL_VT, CTL_VT, PAPER_FULL_CUT, HW_INIT)
 
   const totalBytes = partes.reduce((acc, parte) => acc + parte.length, 0)
   const resultado = new Uint8Array(totalBytes)

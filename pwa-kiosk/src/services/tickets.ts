@@ -396,15 +396,17 @@ export function ticketConsolidadoRestaurante(mesaId: string, ordenes: Venta[]): 
 }
 
 /**
- * Encabezado del comprobante del comensal (impresora "cliente"): el logo en
- * sí NO va acá — lo imprime print-bridge como paso de hardware previo (ver
- * `printers/print.ts` -> `LOGO_TERMICO_PATH`), ya que sólo ese servicio tiene
- * acceso al archivo local y al driver ESC/POS. Esta función arma el resto
- * del bloque, todo centrado (la impresora imprime en `alignCenter` para el
- * comprobante completo, ver `print.ts`): la referencia "Logo Resta" debajo
- * del logo, la leyenda fija del negocio, una línea en blanco de separación,
- * el consecutivo de la orden como "Factura de Caja#" (mismo valor que
- * `venta.id`, ver `services/consecutivo.ts`) y la fecha/hora de la venta.
+ * Encabezado del comprobante del comensal (impresora "cliente"): el texto
+ * "Logo Resta" es un marcador reconocido por `construirBufferTicket` (ver
+ * `services/escpos.ts`) que se reemplaza por el logo real embebido en
+ * ESC/POS (comando `GS v 0`, ver `generarRasterLogo`) — ya no depende de
+ * print-bridge para imprimir el logo, la PWA genera el bitmap ella misma en
+ * el navegador. Este bloque completo (logo, nombre, slogan, contacto) se
+ * imprime centrado (`ESC a 1`); la última línea, "Fin Encabezado", es otro
+ * marcador reconocido por `construirBufferTicket` que cambia la alineación a
+ * la izquierda (`ESC a 0`) para el detalle de productos que sigue — así el
+ * encabezado queda centrado pero el detalle (precios, guarniciones, etc.)
+ * queda alineado a la izquierda, más legible en una impresora térmica.
  */
 function encabezadoCliente(venta: Venta): TicketLine[] {
   const fecha = new Date(venta.fechaHora)
@@ -420,6 +422,7 @@ function encabezadoCliente(venta: Venta): TicketLine[] {
     `Fecha: ${fecha.toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' })}`,
     `Mesa: ${venta.mesa}`,
     SEPARADOR,
+    'Fin Encabezado',
   ]
 }
 
