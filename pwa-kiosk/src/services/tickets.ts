@@ -33,6 +33,57 @@ export type TicketLine = string | { text: string; big?: boolean; medium?: boolea
 const ANCHO = 32
 const SEPARADOR = '-'.repeat(ANCHO)
 
+/**
+ * Margen mínimo entre el borde izquierdo del papel y el texto de cada línea
+ * de item, en los 3 tickets (ver `agregarItem`). Necesario porque el área de
+ * items/detalle de los 3 tickets ahora se imprime alineada a la izquierda
+ * (`ESC a 0`, ver `FIN_ENCABEZADO` abajo y `construirBufferTicket` en
+ * `services/escpos.ts`) en vez de centrada — sin este margen explícito el
+ * texto quedaría pegado al borde del papel.
+ */
+const MARGEN_IZQUIERDO_ITEM = '     ' // 5 espacios
+
+/**
+ * Línea de control (no se imprime): marca, en cualquiera de los 3 tickets,
+ * el límite entre el encabezado (impreso centrado) y el área de
+ * items/detalle que sigue (impresa alineada a la izquierda). Reconocida por
+ * el mismo literal en `construirBufferTicket` (`services/escpos.ts`), que la
+ * omite del texto y en su lugar emite `ESC a 0`.
+ */
+const FIN_ENCABEZADO: TicketLine = 'Fin Encabezado'
+
+/**
+ * Formatea una línea de item para los 3 tickets: nombre a la izquierda con
+ * el margen mínimo `MARGEN_IZQUIERDO_ITEM`, y `precio` (si se indica)
+ * alineado a la derecha en la misma línea, dentro del mismo ancho fijo que
+ * el resto del ticket (`ANCHO`, igual que `lineaConMonto`, que es quien
+ * hace la alineación real). Sin `precio` (tickets de carnicería/restaurante,
+ * que no llevan monto, o líneas secundarias de detalle como "Corte:"), sólo
+ * aplica el margen izquierdo. Si no hay espacio para nombre + precio en una
+ * sola línea, el precio baja a una línea propia (ver `lineaConMonto`),
+ * manteniendo el mismo margen.
+ */
+function agregarItem(linea: string, precio?: string): string[] {
+  const textoConMargen = `${MARGEN_IZQUIERDO_ITEM}${linea}`
+  if (precio === undefined) return [textoConMargen]
+  return lineaConMonto(textoConMargen, precio, ANCHO)
+}
+
+/**
+ * Quita del nombre de un producto cualquier descripción de peso/corte entre
+ * paréntesis al final (ej. "Ribeye (250g)" -> "Ribeye", "Churrasco (400g,
+ * corte mariposa)" -> "Churrasco", "Pechuga de Pollo (250g, marinada)" ->
+ * "Pechuga de Pollo", ver nombres reales en `data/catalog.ts`) — ese dato es
+ * útil en el menú de la PWA pero no se necesita en el tiquete impreso, que
+ * sólo debe mostrar el nombre principal del producto. Sólo quita paréntesis
+ * al final del texto, para no afectar nombres que legítimamente llevan
+ * paréntesis en otra posición (no hay casos así en el catálogo actual, pero
+ * por si acaso).
+ */
+function limpiarNombreProducto(nombre: string): string {
+  return nombre.replace(/\s*\([^)]*\)\s*$/, '').trim()
+}
+
 function nombreGuarnicion(id: string): string {
   return GUARNICIONES.find((g) => g.id === id)?.name ?? id
 }
@@ -120,7 +171,7 @@ function guarnicionesTexto(item: OrderItem, opciones: GuarnicionesTextoOpciones 
  * independientemente del idioma seleccionado en la interfaz.
  */
 function nombreEsItem(item: OrderItem): string {
-  return item.nameEs ?? item.name
+  return limpiarNombreProducto(item.nameEs ?? item.name)
 }
 
 function nombreConVariante(item: OrderItem): string {
@@ -245,7 +296,7 @@ function lineasCarniceria(items: OrderItem[]): string[] {
     if (!nombre) continue
     totales.set(nombre, (totales.get(nombre) ?? 0) + item.quantity)
   }
-  return [...totales.entries()].map(([nombre, cantidad]) => `${cantidad}x ${nombre}`)
+  return [...totales.entries()].flatMap(([nombre, cantidad]) => agregarItem(`${cantidad}x ${nombre}`))
 }
 
 export function ticketCarniceria(venta: Venta): TicketLine[] {
@@ -253,14 +304,20 @@ export function ticketCarniceria(venta: Venta): TicketLine[] {
     'CARNES DON FERNANDO',
     '*** CARNICERIA ***',
     ...encabezado(venta),
+    FIN_ENCABEZADO,
     ...lineasCarniceria(venta.items),
     SEPARADOR,
   ]
 }
 
-/** Envuelve un texto en un `TicketLine` de tamaño `medium` (un poco más grande de lo normal, sin exagerar). Usado en todo el ticket de parrilla (ver `lineasItemCocina`). */
+/**
+ * Envuelve un texto en un `TicketLine` de tamaño `medium` (un poco más
+ * grande de lo normal, sin exagerar), aplicando primero el margen izquierdo
+ * mínimo de `agregarItem` (sin monto, por lo que siempre devuelve una sola
+ * línea). Usado en todo el ticket de parrilla (ver `lineasItemCocina`).
+ */
 function conTamano(texto: string): TicketLine {
-  return { text: texto, medium: true }
+  return { text: agregarItem(texto)[0], medium: true }
 }
 
 /**
@@ -327,7 +384,7 @@ function agruparParaCocina(items: OrderItem[]): TicketLine[] {
 
   const agregarSeccion = (titulo: string, grupo: OrderItem[]) => {
     if (grupo.length === 0) return
-    lineas.push({ text: titulo, bold: true })
+    lineas.push({ text: agregarItem(titulo)[0], bold: true })
     for (const item of grupo) {
       lineas.push(...lineasItemCocina(item))
     }
@@ -351,6 +408,7 @@ export function ticketRestaurante(venta: Venta): TicketLine[] {
     'CARNES DON FERNANDO',
     '*** PARRILLA / COCINA ***',
     ...encabezado(venta),
+    FIN_ENCABEZADO,
     ...agruparParaCocina(venta.items),
   ]
   lineas.push(SEPARADOR)
@@ -371,6 +429,7 @@ export function ticketConsolidadoCarniceria(mesaId: string, ordenes: Venta[]): T
     { text: mesaId.toUpperCase(), big: true, bold: true },
     new Date().toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' }),
     '',
+    FIN_ENCABEZADO,
     ...lineasCarniceria(items),
     SEPARADOR,
   ]
@@ -389,6 +448,7 @@ export function ticketConsolidadoRestaurante(mesaId: string, ordenes: Venta[]): 
     { text: mesaId.toUpperCase(), big: true, bold: true },
     new Date().toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' }),
     '',
+    FIN_ENCABEZADO,
     ...agruparParaCocina(items),
   ]
   lineas.push(SEPARADOR)
@@ -422,7 +482,7 @@ function encabezadoCliente(venta: Venta): TicketLine[] {
     `Fecha: ${fecha.toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' })}`,
     `Mesa: ${venta.mesa}`,
     SEPARADOR,
-    'Fin Encabezado',
+    FIN_ENCABEZADO,
   ]
 }
 
@@ -430,20 +490,20 @@ export function ticketCliente(venta: Venta): TicketLine[] {
   const lineas: TicketLine[] = [...encabezadoCliente(venta)]
   for (const item of venta.items) {
     lineas.push(
-      ...lineaConMonto(`${item.quantity}x ${nombreConVariante(item)}`, formatCRC(item.price * item.quantity)),
+      ...agregarItem(`${item.quantity}x ${nombreConVariante(item)}`, formatCRC(item.price * item.quantity)),
     )
-    if (item.corte) lineas.push(`  Corte: ${item.corte}`)
+    if (item.corte) lineas.push(...agregarItem(`  Corte: ${item.corte}`))
     const termino = terminoTexto(item)
-    if (termino) lineas.push(`  Termino: ${termino}`)
+    if (termino) lineas.push(...agregarItem(`  Termino: ${termino}`))
     const guarniciones = guarnicionesTexto(item)
-    if (guarniciones.length > 0) lineas.push(...guarniciones)
+    for (const linea of guarniciones) lineas.push(...agregarItem(linea))
     const extras = extrasTexto(item)
-    if (extras) lineas.push(extras)
+    if (extras) lineas.push(...agregarItem(extras))
     const opcion = opcionTexto(item)
-    if (opcion) lineas.push(opcion)
+    if (opcion) lineas.push(...agregarItem(opcion))
   }
   lineas.push(SEPARADOR)
-  lineas.push(...lineaConMonto('TOTAL PAGADO:', montoTotalConIvi(venta.total)))
+  lineas.push(...agregarItem('TOTAL PAGADO:', montoTotalConIvi(venta.total)))
 
   if (venta.claveFactura) {
     lineas.push('')

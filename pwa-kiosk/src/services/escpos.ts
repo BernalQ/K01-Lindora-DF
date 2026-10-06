@@ -31,11 +31,19 @@ import logoTermicoUrl from '../assets/logo/logo-resta-termico.png'
  * agregados sobre esa base original:
  * - `ESC t 0` al inicio de cada ticket, para fijar explícitamente la code
  *   page CP437 (en vez de asumir que ya es la tabla activa por defecto).
- * - El comprobante de cliente centra el encabezado (logo + datos del
- *   negocio) pero cambia a alineación izquierda (`ESC a 0`) para el detalle
- *   de productos — ver `MARCADOR_FIN_ENCABEZADO`.
+ * - El encabezado de cada ticket (logo + nombre + slogan + contacto, o el
+ *   título + "Orden/Mesa/fecha" en carnicería/restaurante) se centra, pero
+ *   cambia a alineación izquierda (`ESC a 0`) para el área de items/detalle
+ *   que sigue — ver `MARCADOR_FIN_ENCABEZADO`.
  * - Avance extra de papel en blanco (`ESC d 5`) antes del corte en todo
  *   ticket, para que no se pierda texto al arrancar — ver `FEED_EXTRA_FINAL`.
+ * - El símbolo ₡ no se manda como byte de texto (ninguna code page estándar
+ *   lo tiene, y depender de un byte "no estándar" asumido para la ZKP8016
+ *   es frágil): se rasteriza como una pequeña imagen 1bpp (mismo comando
+ *   `GS v 0` que el logo) y se concatena en el buffer justo donde aparece
+ *   el carácter ₡ en el texto — ver `generarRasterSimboloColon` y el split
+ *   de texto en `agregarLinea`. Así el símbolo sale siempre correcto sin
+ *   importar qué code page tenga activa la impresora.
  */
 
 // --- Comandos ESC/POS (mismos bytes que epson-config.js de node-thermal-printer) ---
@@ -63,13 +71,16 @@ const LF = 0x0a
 const MARCADOR_LOGO: TicketLine = 'Logo Resta'
 
 /**
- * Texto literal que `encabezadoCliente` (ver `services/tickets.ts`) agrega
- * como última línea del bloque de encabezado (logo + nombre + slogan +
- * contacto), para marcar dónde ese bloque termina. `construirBufferTicket`
- * reconoce esta línea, la omite del texto impreso y en su lugar emite
- * `TXT_ALIGN_LT` (ESC a 0), para que el encabezado salga centrado pero el
- * detalle de productos que sigue (precios, guarniciones, etc.) salga
- * alineado a la izquierda. Mismo patrón que `MARCADOR_LOGO` arriba.
+ * Texto literal que `services/tickets.ts` agrega al final del bloque de
+ * encabezado de cualquiera de los 3 tickets (logo + nombre + slogan +
+ * contacto en el comprobante de cliente; título + "Orden/Mesa/fecha" en
+ * carnicería/restaurante — ver la constante `FIN_ENCABEZADO` ahí), para
+ * marcar dónde ese bloque termina. `construirBufferTicket` reconoce esta
+ * línea, la omite del texto impreso y en su lugar emite `TXT_ALIGN_LT`
+ * (ESC a 0), para que el encabezado salga centrado pero el área de
+ * items/detalle que sigue salga alineada a la izquierda (con su propio
+ * margen, ver `agregarItem` en `tickets.ts`). Mismo patrón que
+ * `MARCADOR_LOGO` arriba.
  */
 const MARCADOR_FIN_ENCABEZADO: TicketLine = 'Fin Encabezado'
 
@@ -83,17 +94,12 @@ const MARCADOR_FIN_ENCABEZADO: TicketLine = 'Fin Encabezado'
  * Limitación conocida: el estándar CP437 no tiene el signo de colón (₡) ni
  * mayúsculas acentuadas (Á/Í/Ó/Ú, salvo É).
  *
- * Para el colón, la ZKTeco ZKP8016 del kiosko se confirmó con el byte
- * `0xA2` (en vez de la aproximación anterior con 'c' minúscula) — ver el
- * `else if (char === '₡')` en `codificarTexto` abajo. OJO: en la tabla CP437
- * estándar, `0xA2` es 'ó' (ya mapeada en este mismo objeto, abajo), así que
- * hay una colisión deliberada de byte: si la ZKP8016 usa CP437 estándar para
- * ese code point, "₡" y "ó" se imprimirían como el mismo glyph. Se deja así
- * porque fue la asignación pedida/validada para esta impresora; si en la
- * práctica se ve 'ó' en vez del símbolo de colón, hay que revisar la tabla de
- * caracteres real de la ZKP8016 (ver también `SEL_CODEPAGE_CP437`/`ESC t 0`
- * en las constantes de arriba, que fija explícitamente la tabla 0 al iniciar
- * el ticket).
+ * Para el colón, en vez de aproximar con un byte (se probaron 'c' minúscula
+ * y luego `0xA2`, ambos con problemas: el primero no se lee como símbolo de
+ * moneda, el segundo colisiona con 'ó' en CP437 estándar), el símbolo ₡ se
+ * rasteriza como una pequeña imagen 1bpp y se concatena en el buffer igual
+ * que el logo — ver `generarRasterSimboloColon` y el split de texto en
+ * `agregarLinea` más abajo. Así no depende de ningún byte de code page.
  *
  * Las mayúsculas acentuadas no mapeadas en CP437 se resuelven quitándoles la
  * tilde (Á→A, Í→I, Ó→O, Ú→U, ver `MAPA_SIN_TILDE` abajo) en vez de caer en
@@ -106,7 +112,7 @@ const MAPA_CP437: Record<string, number> = {
   é: 0x82,
   á: 0xa0,
   í: 0xa1,
-  ó: 0xa2, // ver nota de colisión con '₡' arriba
+  ó: 0xa2,
   ú: 0xa3,
   ñ: 0xa4,
   Ñ: 0xa5,
@@ -132,6 +138,12 @@ const MAPA_SIN_TILDE: Record<string, number> = {
   Ú: 0x55, // 'U'
 }
 
+/**
+ * Codifica texto plano a bytes CP437. NUNCA recibe el carácter ₡: `agregarLinea`
+ * (abajo) separa ese carácter del resto del texto antes de llamar esta
+ * función, porque el colón se imprime como imagen (`generarRasterSimboloColon`),
+ * no como byte — ver comentario de archivo arriba.
+ */
 function codificarTexto(texto: string): number[] {
   const bytes: number[] = []
   for (const char of texto) {
@@ -146,8 +158,6 @@ function codificarTexto(texto: string): number[] {
       // una á — es un espacio — así que se mapea aparte, antes de la tabla
       // CP437, a un espacio normal (0x20); de lo contrario saldría como '?'.
       bytes.push(0x20)
-    } else if (char === '₡') {
-      bytes.push(0xa2) // byte confirmado para la ZKTeco ZKP8016, ver nota de colisión con 'ó' documentada arriba
     } else if (MAPA_CP437[char] !== undefined) {
       bytes.push(MAPA_CP437[char])
     } else if (MAPA_SIN_TILDE[char] !== undefined) {
@@ -159,20 +169,91 @@ function codificarTexto(texto: string): number[] {
   return bytes
 }
 
-/** Agrega los bytes de una línea de ticket (texto + estilos bold/big), igual que el `for` de `print.ts`. */
+/**
+ * Bitmap 1bpp del símbolo ₡, generado una sola vez y reutilizado en todas
+ * las líneas con monto del ticket (ver `generarRasterSimboloColon`); se
+ * memoiza porque el glyph es siempre igual — no tiene sentido re-rasterizarlo
+ * en cada línea.
+ */
+let cacheRasterSimboloColon: number[] | null = null
+
+/**
+ * Rasteriza el símbolo ₡ como una pequeña imagen 1bpp (comando `GS v 0`,
+ * igual que el logo, ver `generarRasterLogo`), dibujándolo con `<canvas>` en
+ * vez de depender de un byte de code page. `agregarLinea` concatena este
+ * bitmap en el buffer justo en el punto donde aparece el carácter ₡ dentro
+ * del texto de la línea, así el símbolo sale impreso correctamente sin
+ * importar la tabla de caracteres activa en la impresora.
+ *
+ * Dimensiones: 16×24 px — 16 (múltiplo de 8, requerido por el formato de
+ * bytes de `GS v 0`) px de ancho es aprox. 1 carácter y medio, y 24 px de
+ * alto coincide con el alto de una línea de texto normal en la fuente A por
+ * defecto de la mayoría de impresoras ESC/POS (12x24 puntos), para que el
+ * símbolo quede proporcionado con el resto del texto de la línea.
+ */
+function generarRasterSimboloColon(): number[] {
+  if (cacheRasterSimboloColon) return cacheRasterSimboloColon
+
+  const anchoPx = 16
+  const altoPx = 24
+
+  const canvas = document.createElement('canvas')
+  canvas.width = anchoPx
+  canvas.height = altoPx
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('No se pudo obtener el contexto 2D del canvas para rasterizar el símbolo ₡')
+
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, anchoPx, altoPx)
+  ctx.fillStyle = '#000000'
+  ctx.font = 'bold 20px sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('₡', anchoPx / 2, altoPx / 2 + 1)
+
+  const imageData = ctx.getImageData(0, 0, anchoPx, altoPx)
+  cacheRasterSimboloColon = imageDataARasterEscPos(imageData)
+  return cacheRasterSimboloColon
+}
+
+/**
+ * Agrega los bytes de una línea de ticket: texto con sus estilos bold/big
+ * (igual que el `for` de `print.ts`), separando e intercalando el símbolo ₡
+ * como imagen (ver `generarRasterSimboloColon`) en vez de mandarlo como byte
+ * de texto — el signo de colón es un dato crítico en el comprobante de
+ * cliente (montos), así que no puede depender de que la code page activa en
+ * la impresora lo soporte.
+ */
 function agregarLinea(partes: (number[] | Uint8Array)[], line: TicketLine): void {
-  if (typeof line === 'string') {
-    partes.push(codificarTexto(line), [LF])
-    return
-  }
-  if (line.bold) partes.push(TXT_BOLD_ON)
+  const texto = typeof line === 'string' ? line : line.text
+  const bold = typeof line !== 'string' && !!line.bold
+  const big = typeof line !== 'string' && !!line.big
+
+  if (bold) partes.push(TXT_BOLD_ON)
   // `big` replica exactamente print.ts: manda doble-alto y luego doble-ancho
   // como dos comandos ESC ! separados (no es un bug nuevo de este archivo,
   // así ya se comporta `node-thermal-printer` en producción).
-  if (line.big) partes.push(TXT_2HEIGHT, TXT_2WIDTH)
-  partes.push(codificarTexto(line.text), [LF])
-  if (line.big) partes.push(TXT_NORMAL)
-  if (line.bold) partes.push(TXT_BOLD_OFF)
+  if (big) partes.push(TXT_2HEIGHT, TXT_2WIDTH)
+
+  // Divide el texto en segmentos normales y el símbolo ₡ (si aparece), para
+  // poder intercalar su bitmap sin romper el resto de la línea.
+  let segmento = ''
+  for (const char of texto) {
+    if (char === '₡') {
+      if (segmento) {
+        partes.push(codificarTexto(segmento))
+        segmento = ''
+      }
+      partes.push(generarRasterSimboloColon())
+    } else {
+      segmento += char
+    }
+  }
+  if (segmento || texto === '') partes.push(codificarTexto(segmento))
+  partes.push([LF])
+
+  if (big) partes.push(TXT_NORMAL)
+  if (bold) partes.push(TXT_BOLD_OFF)
 }
 
 /** Carga una imagen como `HTMLImageElement`, esperando a que termine de decodificar. */
@@ -253,11 +334,11 @@ export interface OpcionesBufferTicket {
 /**
  * Construye el buffer ESC/POS completo de un ticket: init + selección
  * explícita de code page CP437 (`ESC t 0`), alinear al centro para el
- * encabezado (logo + nombre + slogan + contacto, igual que `print.ts`),
- * logo embebido opcional, cada línea con sus estilos — con un cambio a
- * alineación izquierda (`ESC a 0`) justo antes del detalle de productos en
- * el comprobante de cliente (ver `MARCADOR_FIN_ENCABEZADO`) —, avance extra
- * de papel en blanco (`ESC d 5`) y el corte final.
+ * encabezado (igual que `print.ts`), logo embebido opcional, cada línea con
+ * sus estilos — con un cambio a alineación izquierda (`ESC a 0`) justo antes
+ * del área de items/detalle, en cualquiera de los 3 tickets (ver
+ * `MARCADOR_FIN_ENCABEZADO`) —, avance extra de papel en blanco (`ESC d 5`)
+ * y el corte final.
  */
 export async function construirBufferTicket(
   lines: TicketLine[],
