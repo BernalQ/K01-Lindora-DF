@@ -249,15 +249,27 @@ export default function PaymentScreen({
     }
 
     const tickets = generarTickets(nuevaVenta)
-    enviarTicket('cliente', tickets.cliente)
 
     if (mesaCompartida) {
-      // Mesa compartida: acumulamos esta orden para el tiquete consolidado
-      // de carnicería/restaurante que se imprime una sola vez al cerrar mesa.
+      // Mesa compartida: sólo se envía de inmediato el comprobante del
+      // comensal; carnicería/restaurante se acumulan y se imprimen
+      // consolidados una sola vez al cerrar la mesa (ver handleOtraOrdenNo).
+      enviarTicket('cliente', tickets.cliente)
       registrarOrden(nuevaVenta)
     } else {
-      enviarTicket('carniceria', tickets.carniceria)
-      enviarTicket('restaurante', tickets.restaurante)
+      // Mesa simple: las 3 estaciones (cliente, carnicería, restaurante) se
+      // disparan en paralelo hacia Backend-Print — cada `enviarTicket`
+      // resuelve su propia IP (ver IP_POR_IMPRESORA en backendPrint.ts) y
+      // construye su propio buffer ESC/POS de forma independiente (ver
+      // escpos.ts), así que no hay motivo para esperar una antes de lanzar
+      // la siguiente. No se bloquea este efecto por el resultado: cada
+      // llamada ya maneja sus propios errores/simulación internamente (ver
+      // `ResultadoImpresion` en backendPrint.ts).
+      Promise.all([
+        enviarTicket('cliente', tickets.cliente),
+        enviarTicket('carniceria', tickets.carniceria),
+        enviarTicket('restaurante', tickets.restaurante),
+      ]).catch((err) => console.error('[PaymentScreen] Error inesperado enviando tickets:', err))
     }
 
     setTicketsGenerados(tickets)

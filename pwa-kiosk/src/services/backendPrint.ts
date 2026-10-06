@@ -1,5 +1,6 @@
 import type { PrinterId, TicketLine } from './tickets'
 import { RED_CONFIG } from './redConfig'
+import { construirBufferTicket } from './escpos'
 
 /**
  * Cliente del backend "Backend-Print": reemplaza a `printBridge.ts` (que
@@ -9,7 +10,10 @@ import { RED_CONFIG } from './redConfig'
  *
  * Backend-Print corre en el puerto 3001 y espera `{ printerIP, data }`: la
  * PWA ya resuelve la IP de la impresora (ver `IP_POR_IMPRESORA` abajo, tomado
- * de `redConfig.ts`) y manda el contenido del tiquete como texto plano.
+ * de `redConfig.ts`) y ahora genera ella misma los bytes ESC/POS del tiquete
+ * (ver `services/escpos.ts`) en vez de mandar texto plano — Backend-Print
+ * recibe el ticket ya armado, listo para escribirse tal cual al socket TCP
+ * de la impresora, sin tener que interpretar nada.
  *
  * Nota: `facturacion.ts` (clientes/Excel/Hacienda) y `systemBridge.ts`
  * (salir de modo kiosko) siguen hablando con el `print-bridge` original en
@@ -29,10 +33,23 @@ const IP_POR_IMPRESORA: Record<PrinterId, string> = {
   restaurante: RED_CONFIG.impresoras.parrilla,
 }
 
-/** Convierte las líneas de un tiquete (ver `TicketLine` en tickets.ts) a texto plano. */
-function lineasATexto(lines: TicketLine[]): string {
-  return lines.map((linea) => (typeof linea === 'string' ? linea : linea.text)).join('\n')
+/**
+ * Forma en que Node.js serializa un `Buffer` a JSON (`JSON.stringify(buf)`
+ * produce exactamente `{ type: 'Buffer', data: [...] }`). Backend-Print
+ * espera ese mismo formato para los bytes ESC/POS, así que se construye a
+ * mano aquí (la PWA corre en el navegador, donde no existe la clase `Buffer`
+ * de Node) a partir del `Uint8Array` que arma `construirBufferTicket`.
+ */
+export interface BufferEscPosJson {
+  type: 'Buffer'
+  data: number[]
 }
+
+function aBufferJson(bytes: Uint8Array): BufferEscPosJson {
+  return { type: 'Buffer', data: Array.from(bytes) }
+}
+
+type DatoImpresion = string | BufferEscPosJson
 
 type ResultadoCrudo =
   | { estado: 'ok' }
@@ -40,7 +57,7 @@ type ResultadoCrudo =
   | { estado: 'error-red'; mensaje: string }
 
 /** Única llamada fetch real hacia Backend-Print; `sendPrint` y `enviarTicket` la envuelven con distinta forma de retorno. */
-async function postPrint(printerIP: string, data: string): Promise<ResultadoCrudo> {
+async function postPrint(printerIP: string, data: DatoImpresion): Promise<ResultadoCrudo> {
   let res: Response
   try {
     res = await fetch(BACKEND_PRINT_URL, {
@@ -70,11 +87,14 @@ export interface RespuestaBackendPrint {
  * Envía una orden de impresión al backend "Backend-Print".
  *
  * - POST http://localhost:3001/print
- * - body: { printerIP, data }
+ * - body: { printerIP, data } — `data` puede ser texto plano o el objeto
+ *   `{ type: 'Buffer', data: number[] }` con bytes ESC/POS (ver
+ *   `BufferEscPosJson` arriba; `enviarTicket` siempre manda esta segunda
+ *   forma para los tickets del kiosko).
  * - éxito: { ok: true, mensaje: 'Ticket enviado' }
  * - fallo (HTTP del backend o red): { ok: false, mensaje: <error> }
  */
-export async function sendPrint(printerIP: string, data: string): Promise<RespuestaBackendPrint> {
+export async function sendPrint(printerIP: string, data: DatoImpresion): Promise<RespuestaBackendPrint> {
   const resultado = await postPrint(printerIP, data)
 
   if (resultado.estado === 'ok') {
@@ -97,8 +117,13 @@ export interface ResultadoImpresion {
  * Reemplazo directo de `enviarTicket` (antes en `printBridge.ts`): misma
  * firma y mismo contrato de retorno (`ResultadoImpresion`), para que
  * `AdminScreen.tsx` / `PaymentScreen.tsx` sólo necesiten cambiar el import.
- * Internamente ahora resuelve la IP guardada y llama a Backend-Print en vez
- * de print-bridge.
+ * Internamente ahora:
+ * 1. Construye el buffer ESC/POS real del tiquete (`construirBufferTicket`,
+ *    ver `services/escpos.ts`) — con el logo de Don Fernando embebido como
+ *    imagen (comando `GS v 0`) en vez del texto "Logo Resta", únicamente
+ *    para la estación "cliente" (comprobante del comensal).
+ * 2. Resuelve la IP guardada de esa impresora y llama a Backend-Print con
+ *    `data: { type: 'Buffer', data: [...] }` (ver `BufferEscPosJson`).
  *
  * Mantiene la misma distinción de fallos que tenía `printBridge.ts`:
  * 1. Backend-Print mismo no está corriendo/alcanzable (`fetch` lanza —
@@ -112,11 +137,14 @@ export interface ResultadoImpresion {
  */
 export async function enviarTicket(printer: PrinterId, lines: TicketLine[]): Promise<ResultadoImpresion> {
   const printerIP = IP_POR_IMPRESORA[printer]
-  const data = lineasATexto(lines)
+  const bytesEscPos = await construirBufferTicket(lines, { incluirLogo: printer === 'cliente' })
+  const data = aBufferJson(bytesEscPos)
   const resultado = await postPrint(printerIP, data)
 
   if (resultado.estado === 'error-red') {
-    console.log(`[MOCK] Ticket "${printer}" (Backend-Print no disponible en ${BACKEND_PRINT_URL}):\n${data}`)
+    console.log(
+      `[MOCK] Ticket "${printer}" (Backend-Print no disponible en ${BACKEND_PRINT_URL}): ${bytesEscPos.length} bytes ESC/POS generados pero no enviados`,
+    )
     return { printer, ok: true, simulado: true, error: resultado.mensaje }
   }
 
@@ -125,6 +153,6 @@ export async function enviarTicket(printer: PrinterId, lines: TicketLine[]): Pro
     return { printer, ok: false, simulado: false, error: resultado.mensaje }
   }
 
-  console.log(`[Backend-Print] Ticket enviado a ${printer} (${printerIP})`)
+  console.log(`[Backend-Print] Ticket enviado a ${printer} (${printerIP}, ${bytesEscPos.length} bytes ESC/POS)`)
   return { printer, ok: true, simulado: false }
 }
