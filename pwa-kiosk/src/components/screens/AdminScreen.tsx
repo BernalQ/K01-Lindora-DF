@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { CATEGORIES, PRODUCTS, categoryDisplayName, formatCRC, productDisplayName } from '../../data/catalog'
 import { actualizarAgotado, actualizarPrecio } from '../../services/catalogOverrides'
 import { obtenerTodasLasVentas } from '../../services/offlineQueue'
-import { enviarTicket } from '../../services/printBridge'
+import { enviarTicket } from '../../services/backendPrint'
 import { NOMBRES_IMPRESORA, generarTickets, ticketCierreCaja, type PrinterId, type TicketLine } from '../../services/tickets'
 import TicketPopup from '../ui/TicketPopup'
 import type { Product } from '../../types/catalog'
@@ -448,9 +448,9 @@ function PanelOrdenesDelDia() {
 const ORDEN_IMPRESION: PrinterId[] = ['cliente', 'restaurante', 'carniceria']
 
 /**
- * Estado de un envío de impresión. `'error'` significa que print-bridge SÍ
+ * Estado de un envío de impresión. `'error'` significa que Backend-Print SÍ
  * respondió pero la impresora física no (ver `enviarTicket` en
- * `services/printBridge.ts`), distinto de `'simulado'` (print-bridge mismo
+ * `services/backendPrint.ts`), distinto de `'simulado'` (Backend-Print mismo
  * no está corriendo, escenario normal en desarrollo sin hardware).
  */
 type EstadoImpresion = 'enviando' | 'ok' | 'simulado' | 'error' | null

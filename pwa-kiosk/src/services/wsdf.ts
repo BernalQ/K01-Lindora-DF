@@ -15,7 +15,7 @@ import type { ValidacionWsDf, WsDfPayload } from '../types/wsdf'
  * implementado). Se hardcodea aquí siguiendo el mismo patrón ya usado en
  * el resto del proyecto para configuración de integraciones externas
  * (ver `BRIDGE_URL` en `services/facturacion.ts` y `PRINT_BRIDGE_URL` en
- * `services/printBridge.ts`), ya que el proyecto no usa variables de
+ * `services/systemBridge.ts`), ya que el proyecto no usa variables de
  * entorno (`.env` / `import.meta.env`) en ningún otro lado todavía.
  */
 export const WSDF_CONFIG = {

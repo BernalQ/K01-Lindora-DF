@@ -4,8 +4,8 @@
   "gatewayIp": "10.0.5.250",
   "mascaraSubred": "255.255.255.0",
   "impresoras": {
-    "cliente": { "ip": "127.0.0.1", "puerto": 19100 },
-    "carniceria": { "ip": "127.0.0.1", "puerto": 19101 },
-    "restaurante": { "ip": "127.0.0.1", "puerto": 19102 }
+    "cliente": { "ip": "10.0.5.247", "puerto": 9100 },
+    "carniceria": { "ip": "10.0.5.248", "puerto": 9100 },
+    "restaurante": { "ip": "10.0.5.249", "puerto": 9100 }
   }
 }

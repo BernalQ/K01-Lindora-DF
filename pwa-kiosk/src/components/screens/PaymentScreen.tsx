@@ -20,7 +20,7 @@ import { encolarVenta } from '../../services/offlineQueue'
 import { enviarVentaACodisa } from '../../services/codisa'
 import { enviarVentaAAwsIot } from '../../services/awsIot'
 import { construirPedidoWsDf, enviarPedidoWsDf, validarPedidoWsDf } from '../../services/wsdf'
-import { enviarTicket } from '../../services/printBridge'
+import { enviarTicket } from '../../services/backendPrint'
 import {
   NOMBRES_IMPRESORA,
   generarTickets,

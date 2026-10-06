@@ -4,11 +4,14 @@ const BRIDGE_URL = 'http://localhost:4000'
 
 /**
  * Servicio de facturación electrónica: habla con el print-bridge local
- * (mismo servicio que ya maneja las impresoras — ver services/printBridge.ts),
- * que a su vez consulta/actualiza la base local de clientes (Excel) y,
- * cuando el API de Codisa esté habilitado, reenviará a Hacienda.
+ * (el mismo servicio Node en el puerto 4000 — ver `services/systemBridge.ts`
+ * para otro ejemplo de endpoint propio de ese servicio; las impresoras
+ * térmicas, en cambio, ya no pasan por print-bridge sino por Backend-Print,
+ * ver `services/backendPrint.ts`), que a su vez consulta/actualiza la base
+ * local de clientes (Excel) y, cuando el API de Codisa esté habilitado,
+ * reenviará a Hacienda.
  *
- * Igual que en printBridge.ts/codisa.ts: si el print-bridge no está
+ * Igual que en systemBridge.ts/codisa.ts: si el print-bridge no está
  * disponible (ej. desarrollo sin el servicio corriendo), las funciones
  * fallan de forma controlada en vez de bloquear el flujo del kiosko.
  */

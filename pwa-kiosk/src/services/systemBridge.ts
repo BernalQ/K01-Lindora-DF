@@ -6,8 +6,10 @@ export interface ResultadoSalirKiosko {
 }
 
 /**
- * Pide al `print-bridge` local (mismo mecanismo que `enviarTicket` en
- * `printBridge.ts`) que cierre el navegador en modo kiosko, lo que además
+ * Pide al `print-bridge` local (mismo servicio Node en el puerto 4000; no
+ * confundir con `enviarTicket` en `services/backendPrint.ts`, que ahora
+ * envía los tiquetes de impresora a un backend distinto, "Backend-Print",
+ * puerto 3001) que cierre el navegador en modo kiosko, lo que además
  * revela el escritorio de Windows detrás (ver `routes/system.ts` en
  * `print-bridge`, que hace el `taskkill` real).
  *
