@@ -210,6 +210,24 @@ export function formatInvoiceDatafono(numeroFacturaKiosko: string): string {
   return invoice
 }
 
+/**
+ * Modo de simulación de cobro — SÓLO para probar el resto del flujo (Codisa
+ * + impresión de tiquetes) mientras el datáfono físico/pinpad está fuera de
+ * servicio (ver conversación de depuración 2026-10-07: Transaction Manager
+ * se queda esperando indefinidamente la respuesta del pinpad, problema de
+ * hardware/comunicación local, no de esta integración).
+ *
+ * Gateado por `import.meta.env.DEV`: Vite reemplaza este valor en tiempo de
+ * compilación — en `npm run build` (el bundle real que corre en el kiosko)
+ * queda fijo en `false` y el bundler elimina el código muerto de la rama de
+ * abajo. No es un toggle en runtime que alguien pueda dejar prendido por
+ * accidente en producción: estructuralmente no existe en ese build. Si en
+ * algún momento se necesita usar esto en un kiosko ya compilado, debe
+ * protegerse con un mecanismo aparte (ej. PIN de operador) antes de
+ * habilitarlo ahí — no se activa solo.
+ */
+export const SIMULACION_DATAFONO_ACTIVA = import.meta.env.DEV
+
 export async function enviarTransaccionDatafono(transaccion: TransaccionDatafono): Promise<ResultadoDatafono> {
   const { terminalId } = transaccion
 
@@ -219,6 +237,32 @@ export async function enviarTransaccionDatafono(transaccion: TransaccionDatafono
       mensaje: 'Ya hay una transacción en curso en este terminal. Espere a que finalice antes de enviar otra.',
       permiteReintentar: false,
     }
+  }
+
+  // Bypass de pruebas: no se toca `terminalesConTransaccionActiva` ni se
+  // manda nada por red — se loguea igual la transacción que se habría
+  // enviado (con `simulado: true`, ver requerimiento de logging) y se
+  // devuelve de inmediato un resultado aprobado simulado. Sólo aplica a
+  // SALE (es el único tipo de transacción que dispara "Pagar con
+  // datáfono"); VOID/BATCH_SETTLEMENT siguen su camino real sin cambios.
+  if (SIMULACION_DATAFONO_ACTIVA && transaccion.transactionType === 'SALE') {
+    registrarLogDatafono('request', { ...transaccion, simulado: true })
+    const resultadoSimulado: ResultadoDatafono = {
+      categoria: 'aprobada',
+      mensaje: 'Aprobada (SIMULADO — modo prueba, no se cobró realmente con el datáfono).',
+      permiteReintentar: false,
+      responseCode: '00',
+      authorizationNumber: 'SIMULADO',
+      referenceNumber: 'SIMULADO',
+      simulado: true,
+    }
+    registrarLogDatafono('response', {
+      terminalId,
+      invoice: transaccion.invoice,
+      simulado: true,
+      resultado: resultadoSimulado,
+    })
+    return resultadoSimulado
   }
 
   terminalesConTransaccionActiva.add(terminalId)

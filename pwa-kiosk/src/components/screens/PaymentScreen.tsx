@@ -23,7 +23,13 @@ import { enviarVentaAAwsIot } from '../../services/awsIot'
 import { construirPedidoWsDf, enviarPedidoWsDf, validarPedidoWsDf } from '../../services/wsdf'
 import { enviarTicket, type ResultadoImpresion } from '../../services/backendPrint'
 import ImpresionErrorPopup from '../ui/ImpresionErrorPopup'
-import { DATAFONO_CONFIG, enviarTransaccionDatafono, formatInvoiceDatafono, formatMontoDatafono } from '../../services/datafono'
+import {
+  DATAFONO_CONFIG,
+  SIMULACION_DATAFONO_ACTIVA,
+  enviarTransaccionDatafono,
+  formatInvoiceDatafono,
+  formatMontoDatafono,
+} from '../../services/datafono'
 import {
   NOMBRES_IMPRESORA,
   generarTickets,
@@ -140,6 +146,18 @@ export default function PaymentScreen({
   // opción de reintentar o continuar sin imprimir.
   const [cerrandoMesaError, setCerrandoMesaError] = useState<PrinterId[] | null>(null)
   const yaProcesado = useRef(false)
+  // Auto-pilot de pruebas (ver `SIMULACION_DATAFONO_ACTIVA` en
+  // `services/datafono.ts`): `ventaSimuladaRef` queda en `true` sólo cuando
+  // la aprobación del datáfono vino del bypass de simulación (nunca en una
+  // transacción real) — a partir de ahí, los tres efectos de más abajo
+  // avanzan solos el resto del flujo (cerrar pop-up de datáfono, enviar a
+  // Codisa en segundo plano sin esperar respuesta, y volver a la pantalla
+  // inicial) sin requerir ninguna interacción manual del operador.
+  // `codisaAutoDisparadoRef`/`clienteAutoDisparadoRef` evitan que esos
+  // efectos se disparen más de una vez por venta ante un re-render.
+  const ventaSimuladaRef = useRef(false)
+  const codisaAutoDisparadoRef = useRef(false)
+  const clienteAutoDisparadoRef = useRef(false)
   // Consecutivo de la orden (ver services/consecutivo.ts): se genera una sola
   // vez por venta, sin importar si primero lo consume la generación de la
   // factura (intentarFactura, más abajo) o el efecto de confirmación de la
@@ -211,6 +229,7 @@ export default function PaymentScreen({
       totalAmount,
       invoice,
     })
+    ventaSimuladaRef.current = !!resultado.simulado
     setResultadoDatafono(resultado)
   }
 
@@ -249,6 +268,20 @@ export default function PaymentScreen({
     setResultadoDatafono(null)
     setEstado(fueAprobada ? 'aprobado' : 'idle')
   }
+
+  // Auto-pilot de pruebas: cuando la aprobación vino del bypass de
+  // simulación (`resultadoDatafono.simulado`), cierra sola el pop-up de
+  // `DatafonoPopup` tras una breve pausa (tiempo suficiente para que el
+  // operador vea el banner "Modo prueba" y el desenlace "Aprobada"), en vez
+  // de requerir que alguien presione "Continuar" manualmente. Nunca aplica
+  // a una transacción real: `simulado` sólo es `true` cuando vino del
+  // bypass (ver `SIMULACION_DATAFONO_ACTIVA` en `services/datafono.ts`).
+  useEffect(() => {
+    if (!resultadoDatafono?.simulado) return
+    const id = setTimeout(() => handleCerrarDatafono(), 1200)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultadoDatafono])
 
   /**
    * "Cancelar Orden": disponible antes de cobrar (pantalla inicial de pago).
@@ -307,6 +340,13 @@ export default function PaymentScreen({
   useEffect(() => {
     if (estado !== 'aprobado' || esperandoFactura || yaProcesado.current) return
     yaProcesado.current = true
+    // Reinicia las guardas del auto-pilot de pruebas para esta nueva venta
+    // (ver `ventaSimuladaRef` arriba) — sin esto, una segunda venta
+    // simulada en la misma sesión de mesa compartida no dispararía de
+    // nuevo el envío automático a Codisa ni el retorno a inicio, porque
+    // los refs seguirían en `true` de la venta anterior.
+    codisaAutoDisparadoRef.current = false
+    clienteAutoDisparadoRef.current = false
 
     const items: OrderItem[] = lines.map((l) => ({
       productId: l.productId,
@@ -437,6 +477,48 @@ export default function PaymentScreen({
     setResultadoOrdenCodisa(null)
     setPaso('popupCliente')
   }
+
+  // Auto-pilot de pruebas: cuando la venta vino del bypass de simulación,
+  // el envío a Codisa se dispara solo, en paralelo, SIN esperar su
+  // respuesta para avanzar el flujo (a diferencia de
+  // `handleConfirmarEnvioWsDf`, que sí espera) — por eso no se usa
+  // `setEnviandoOrdenCodisa`/`setResultadoOrdenCodisa` aquí, sólo se deja
+  // constancia en consola (el request/response ya quedan en el log de
+  // Codisa vía `registrarLogCodisa`, dentro de `enviarPedidoWsDf`). El
+  // pop-up `WsDfPopup` se vuelve puramente informativo en este modo (ver
+  // prop `automatico`) y, tras una pausa para que el operador pueda leer el
+  // endpoint/JSON, el flujo avanza solo al comprobante del comensal.
+  useEffect(() => {
+    if (paso !== 'popupWsDf' || !wsdfPayload || resultadoOrdenCodisa) return
+    if (!ventaSimuladaRef.current || codisaAutoDisparadoRef.current) return
+    codisaAutoDisparadoRef.current = true
+    enviarPedidoWsDf(wsdfPayload)
+      .then((resultado) => console.log('[PaymentScreen] (modo prueba) Codisa respondió:', resultado))
+      .catch((err) => console.error('[PaymentScreen] (modo prueba) Error inesperado enviando a Codisa:', err))
+    const id = setTimeout(() => setPaso('popupCliente'), 3000)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paso, wsdfPayload, resultadoOrdenCodisa])
+
+  // Auto-pilot de pruebas: una vez mostrado el comprobante del comensal,
+  // vuelve sola a la pantalla inicial (MenuScreen) sin que el operador
+  // tenga que cerrar el pop-up manualmente. En mesa compartida esto cierra
+  // la mesa directamente (sin pasar por la pregunta "¿otra orden?", que no
+  // tiene sentido en un auto-pilot sin operador) — el tiquete consolidado
+  // de cierre normal de mesa compartida no aplica aquí porque esta es una
+  // venta de prueba aislada.
+  useEffect(() => {
+    if (paso !== 'popupCliente' || !ventaSimuladaRef.current || clienteAutoDisparadoRef.current) return
+    clienteAutoDisparadoRef.current = true
+    const id = setTimeout(() => {
+      if (mesaCompartida) cerrarMesaStore()
+      clearCart()
+      setPaso('ninguno')
+      onVolverInicio()
+    }, 2000)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paso])
 
   /**
    * Cierra el popup del comprobante del comensal. En mesa compartida avanza
@@ -665,6 +747,18 @@ export default function PaymentScreen({
           </h2>
         </div>
       </header>
+
+      {/* Aviso persistente de modo prueba: SIMULACION_DATAFONO_ACTIVA sólo es
+          `true` en `npm run dev` (ver services/datafono.ts) — esta franja no
+          puede aparecer en el build real del kiosko, pero mientras esté
+          activa debe quedar visible en TODA la pantalla de pago (no sólo en
+          el pop-up del datáfono) para que nadie confunda una prueba con un
+          cobro real. */}
+      {SIMULACION_DATAFONO_ACTIVA && (
+        <div className="shrink-0 bg-amber-500 px-4 py-1.5 text-center text-xs font-bold uppercase tracking-widest text-amber-950">
+          Modo prueba — el cobro con datáfono está simulado
+        </div>
+      )}
 
       {estado !== 'aprobado' ? (
         <main className="flex flex-1 flex-col overflow-y-auto p-4">
@@ -934,6 +1028,7 @@ export default function PaymentScreen({
           onConfirmar={handleConfirmarEnvioWsDf}
           onCancelar={handleCancelarWsDf}
           enviando={enviandoOrdenCodisa}
+          automatico={ventaSimuladaRef.current}
         />
       )}
 

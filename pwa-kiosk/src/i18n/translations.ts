@@ -234,6 +234,7 @@ const dictionaries = {
     'wsdf.cancelar': 'Cancelar',
     'wsdf.confirmarEnvio': 'Confirmar envío',
     'wsdf.enviando': 'Enviando…',
+    'wsdf.enviandoAutomatico': 'Enviando a Codisa en segundo plano (modo prueba), sin esperar respuesta…',
     'wsdf.confirmarCancelarMensaje': 'Si cancela, la factura electrónica no se transmitirá a Codisa. ¿Desea continuar?',
     'wsdf.confirmarCancelarSi': 'Sí, cancelar',
     'wsdf.confirmarCancelarNo': 'No, volver',
@@ -254,6 +255,7 @@ const dictionaries = {
       'Antes de reintentar, revise el datáfono físico: si ya mostró "Aprobada" o imprimió un comprobante, NO reintente — podría cobrarse dos veces. Reintente sólo si el datáfono no completó la transacción.',
     'datafono.confirmarReintentoTimeoutSi': 'Ya verifiqué, reintentar',
     'datafono.confirmarReintentoTimeoutNo': 'Volver',
+    'datafono.modoPrueba': 'Modo prueba — no se cobró realmente',
 
     'codisaOrden.tituloEnviado': 'Pedido enviado correctamente ✔',
     'codisaOrden.tituloRechazado': 'Codisa rechazó el pedido ✖',
@@ -489,6 +491,7 @@ const dictionaries = {
     'wsdf.cancelar': 'Cancel',
     'wsdf.confirmarEnvio': 'Confirm send',
     'wsdf.enviando': 'Sending…',
+    'wsdf.enviandoAutomatico': 'Sending to Codisa in the background (test mode), not waiting for a response…',
     'wsdf.confirmarCancelarMensaje': 'If you cancel, the electronic invoice will not be sent to Codisa. Do you want to continue?',
     'wsdf.confirmarCancelarSi': 'Yes, cancel',
     'wsdf.confirmarCancelarNo': 'No, go back',
@@ -509,6 +512,7 @@ const dictionaries = {
       'Before retrying, check the physical card reader: if it already showed "Approved" or printed a receipt, do NOT retry — it could be charged twice. Only retry if the card reader did not complete the transaction.',
     'datafono.confirmarReintentoTimeoutSi': 'I checked, retry',
     'datafono.confirmarReintentoTimeoutNo': 'Go back',
+    'datafono.modoPrueba': 'Test mode — not actually charged',
 
     'codisaOrden.tituloEnviado': 'Order sent successfully ✔',
     'codisaOrden.tituloRechazado': 'Codisa rejected the order ✖',

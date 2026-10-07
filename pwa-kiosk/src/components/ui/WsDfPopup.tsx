@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { formatCRC, nombreParaCodigoCodisa } from '../../data/catalog'
 import { useLanguage } from '../../context/useLanguage'
+import { WSDF_CONFIG } from '../../services/wsdf'
 import type { Venta } from '../../types/order'
 import type { ValidacionWsDf, WsDfPayload } from '../../types/wsdf'
 
@@ -12,17 +13,36 @@ interface WsDfPopupProps {
   onCancelar: () => void
   /** `true` mientras `enviarPedidoWsDf` está en vuelo (ver `PaymentScreen`): deshabilita ambos botones y cambia el texto de "Confirmar envío". */
   enviando?: boolean
+  /**
+   * `true` sólo en el auto-pilot de pruebas (ver `ventaSimuladaRef` en
+   * `PaymentScreen`): el envío a Codisa ya se disparó solo, en paralelo,
+   * sin esperar a que el operador confirme ni a que Codisa responda — este
+   * pop-up pasa a ser puramente informativo (endpoint + JSON) y se oculta
+   * la fila de botones "Cancelar"/"Confirmar envío", que no aplican porque
+   * ya no hay nada que confirmar ni cancelar.
+   */
+  automatico?: boolean
 }
 
 /**
  * Pop-up de verificación previo al envío real a Codisa (`?action=orden`,
  * ver `services/wsdf.ts`): muestra, de forma legible, los datos que se
- * enviarían al confirmar el pago, junto con el JSON crudo completo. Al
- * presionar "Confirmar envío" se dispara el POST real; mientras está en
- * vuelo (`enviando`) este mismo pop-up permanece abierto con los botones
+ * enviarían al confirmar el pago, junto con la dirección exacta del
+ * endpoint y el JSON crudo completo — para poder confirmar visualmente que
+ * el formato es correcto antes de que el POST real salga. Al presionar
+ * "Confirmar envío" se dispara el POST real; mientras está en vuelo
+ * (`enviando`) este mismo pop-up permanece abierto con los botones
  * deshabilitados, y el resultado final se muestra en `CodisaOrdenPopup`.
  */
-export default function WsDfPopup({ venta, payload, validacion, onConfirmar, onCancelar, enviando }: WsDfPopupProps) {
+export default function WsDfPopup({
+  venta,
+  payload,
+  validacion,
+  onConfirmar,
+  onCancelar,
+  enviando,
+  automatico,
+}: WsDfPopupProps) {
   const { language, t } = useLanguage()
   const { pedido } = payload
   // "Cancelar" en una venta con factura electrónica (`fe === '1'`) significa
@@ -123,6 +143,12 @@ export default function WsDfPopup({ venta, payload, validacion, onConfirmar, onC
               </div>
             </div>
 
+            {/* Endpoint real al que se mandaría el POST al confirmar — visible siempre, sin necesidad de desplegar el JSON, para verificar de un vistazo a qué URL/ambiente se está apuntando (ej. producción vs sandbox). */}
+            <div className="rounded-xl border border-wood-100 bg-wood-50 p-3">
+              <p className="mb-1 text-xs font-bold uppercase tracking-wide text-wood-500">Endpoint</p>
+              <p className="break-all font-mono text-xs text-wood-900">{WSDF_CONFIG.endpointOrden}</p>
+            </div>
+
             {/* JSON crudo, para verificar la estructura exacta que se enviaría */}
             <details className="rounded-xl border-2 border-dashed border-wood-200 p-3">
               <summary className="cursor-pointer text-xs font-bold uppercase tracking-wide text-wood-500">
@@ -135,7 +161,14 @@ export default function WsDfPopup({ venta, payload, validacion, onConfirmar, onC
           </div>
         </div>
 
-        {confirmandoCancelar ? (
+        {automatico ? (
+          <div className="flex shrink-0 flex-col gap-1 border-t border-wood-100 bg-amber-50 p-4 text-center">
+            <p className="text-xs font-bold uppercase tracking-wide text-amber-800">
+              {t('datafono.modoPrueba')}
+            </p>
+            <p className="text-xs text-amber-700">{t('wsdf.enviandoAutomatico')}</p>
+          </div>
+        ) : confirmandoCancelar ? (
           <div className="flex shrink-0 flex-col gap-3 border-t border-wood-100 p-5">
             <p className="text-center text-sm font-semibold text-amber-700">{t('wsdf.confirmarCancelarMensaje')}</p>
             <div className="flex gap-3">
