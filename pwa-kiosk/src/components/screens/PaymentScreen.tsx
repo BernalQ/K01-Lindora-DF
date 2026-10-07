@@ -233,6 +233,27 @@ export default function PaymentScreen({
     setResultadoDatafono(resultado)
   }
 
+  // Auto-pilot de pruebas: en DEV, cuando se llega a esta pantalla recién
+  // completado el registro manual de cliente para factura electrónica (ver
+  // `App.tsx` -> `handleSolicitarFactura`/`handleRegistroGuardado`, que
+  // saltan `CedulaScreen`), se dispara solo el cobro con datáfono —el
+  // operador no necesita presionar "Pagar con datáfono"—, que a su vez ya
+  // queda simulado como aprobado por `SIMULACION_DATAFONO_ACTIVA` (ver
+  // `services/datafono.ts`). `facturaAutoCobradaRef` evita que esto se
+  // repita en cada re-render mientras `estado` sigue en 'idle' (ej.
+  // mientras el monto se valida). Nunca aplica fuera de DEV ni al pago
+  // simple (sin factura), donde el operador sigue presionando el botón a
+  // mano como siempre.
+  const facturaAutoCobradaRef = useRef(false)
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    if (tipoPago !== 'factura' || !cliente || estado !== 'idle') return
+    if (facturaAutoCobradaRef.current) return
+    facturaAutoCobradaRef.current = true
+    handleCobrar()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipoPago, cliente, estado])
+
   /** "Intentar de nuevo" del pop-up de datáfono: reenvía la misma transacción SALE. */
   const handleReintentarDatafono = () => {
     setResultadoDatafono(null)

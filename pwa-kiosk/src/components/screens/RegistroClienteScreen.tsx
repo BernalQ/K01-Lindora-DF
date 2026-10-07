@@ -28,6 +28,14 @@ const TELEFONO_REGEX = /^[0-9+\-\s]{8,15}$/
  */
 export default function RegistroClienteScreen({ cedula, onBack, onGuardado }: RegistroClienteScreenProps) {
   const { t } = useLanguage()
+  // En modo DEV (ver `App.tsx` -> `handleSolicitarFactura`) se llega a esta
+  // pantalla sin pasar por `CedulaScreen`, así que `cedula` viene vacía ("")
+  // en vez de pre-llenada — se habilita un campo editable sólo para ese
+  // caso (producción nunca activa este bloque: `import.meta.env.DEV` se
+  // elimina en el build real). Fuera de DEV, `cedula` sigue siendo de sólo
+  // lectura (ya viene validada por `CedulaScreen`).
+  const cedulaEditable = import.meta.env.DEV
+  const [cedulaManual, setCedulaManual] = useState(cedula)
   const [nombre, setNombre] = useState('')
   const [correo, setCorreo] = useState('')
   const [telefono, setTelefono] = useState('')
@@ -35,13 +43,16 @@ export default function RegistroClienteScreen({ cedula, onBack, onGuardado }: Re
   const [guardando, setGuardando] = useState(false)
   const [avisoSinConexion, setAvisoSinConexion] = useState(false)
 
+  const cedulaFinal = cedulaEditable ? cedulaManual.trim() : cedula
+
   // Campos opcionales: vacío siempre es válido, sólo se exige el formato
   // correcto cuando el operador/cliente escribió algo (ver hallazgo de
   // auditoría — antes no se validaba el formato de correo/teléfono).
   const correoValido = correo.trim().length === 0 || CORREO_REGEX.test(correo.trim())
   const telefonoValido = telefono.trim().length === 0 || TELEFONO_REGEX.test(telefono.trim())
 
-  const puedeGuardar = nombre.trim().length > 0 && correoValido && telefonoValido && !guardando
+  const puedeGuardar =
+    nombre.trim().length > 0 && cedulaFinal.length > 0 && correoValido && telefonoValido && !guardando
 
   const handleGuardar = async () => {
     if (!puedeGuardar) return
@@ -51,7 +62,7 @@ export default function RegistroClienteScreen({ cedula, onBack, onGuardado }: Re
     // WsDf asumiría por defecto "física nacional" aunque la cédula tecleada
     // sea en realidad jurídica o de extranjero (ver hallazgo de auditoría).
     const cliente: Cliente = completarTipoPersonaPorCedula({
-      cedula,
+      cedula: cedulaFinal,
       nombre: nombre.trim(),
       correo: correo.trim(),
       telefono: telefono.trim(),
@@ -83,9 +94,26 @@ export default function RegistroClienteScreen({ cedula, onBack, onGuardado }: Re
       </header>
 
       <main className="flex-1 overflow-y-auto p-6 pb-32">
-        <p className="mb-6 text-wood-600">{t('registro.subtitle', { cedula })}</p>
+        {!cedulaEditable && <p className="mb-6 text-wood-600">{t('registro.subtitle', { cedula })}</p>}
 
         <div className="mx-auto flex max-w-md flex-col gap-4">
+          {cedulaEditable && (
+            <div>
+              <label htmlFor="cedula" className="mb-1 block text-base font-bold text-wood-900">
+                {t('registro.cedula')}
+              </label>
+              <input
+                id="cedula"
+                type="text"
+                inputMode="numeric"
+                autoFocus
+                value={cedulaManual}
+                onChange={(e) => setCedulaManual(e.target.value)}
+                className="w-full rounded-xl border-2 border-wood-200 bg-white px-4 py-3 text-lg text-wood-900 outline-none focus:border-brand-red"
+              />
+            </div>
+          )}
+
           <div>
             <label htmlFor="nombre" className="mb-1 block text-base font-bold text-wood-900">
               {t('registro.nombre')}
@@ -93,7 +121,7 @@ export default function RegistroClienteScreen({ cedula, onBack, onGuardado }: Re
             <input
               id="nombre"
               type="text"
-              autoFocus
+              autoFocus={!cedulaEditable}
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
               className="w-full rounded-xl border-2 border-wood-200 bg-white px-4 py-3 text-lg text-wood-900 outline-none focus:border-brand-red"

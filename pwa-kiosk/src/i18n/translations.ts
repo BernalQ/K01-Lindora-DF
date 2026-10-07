@@ -123,6 +123,7 @@ const dictionaries = {
 
     'registro.title': 'Registro de cliente',
     'registro.subtitle': 'No encontramos la cédula {{cedula}}. Complete sus datos para la factura.',
+    'registro.cedula': 'Cédula',
     'registro.nombre': 'Nombre completo',
     'registro.correo': 'Correo electrónico',
     'registro.telefono': 'Teléfono',
@@ -380,6 +381,7 @@ const dictionaries = {
 
     'registro.title': 'Customer registration',
     'registro.subtitle': "We couldn't find ID {{cedula}}. Please fill in your details for the invoice.",
+    'registro.cedula': 'ID number',
     'registro.nombre': 'Full name',
     'registro.correo': 'Email',
     'registro.telefono': 'Phone',
