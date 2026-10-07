@@ -23,7 +23,7 @@ import { enviarVentaAAwsIot } from '../../services/awsIot'
 import { construirPedidoWsDf, enviarPedidoWsDf, validarPedidoWsDf } from '../../services/wsdf'
 import { enviarTicket, type ResultadoImpresion } from '../../services/backendPrint'
 import ImpresionErrorPopup from '../ui/ImpresionErrorPopup'
-import { DATAFONO_CONFIG, enviarTransaccionDatafono, formatMontoDatafono } from '../../services/datafono'
+import { DATAFONO_CONFIG, enviarTransaccionDatafono, formatInvoiceDatafono, formatMontoDatafono } from '../../services/datafono'
 import {
   NOMBRES_IMPRESORA,
   generarTickets,
@@ -193,13 +193,23 @@ export default function PaymentScreen({
       return
     }
 
+    // El consecutivo legible del kiosko (`obtenerNumeroFactura()`, ej.
+    // "01-2026-10-00007") no se manda tal cual al datáfono: Transaction
+    // Manager exige `invoice` numérico de máximo 12 caracteres y lo
+    // rechazaba con "Parámetros inválidos en el request" (ver hallazgo de
+    // auditoría — `formatInvoiceDatafono` en services/datafono.ts). El
+    // mismo número de factura (con guiones) sigue usándose sin cambios para
+    // Codisa y el tiquete impreso, sólo se deriva un `invoice` corto para
+    // esta llamada puntual.
+    const invoice = formatInvoiceDatafono(obtenerNumeroFactura())
+
     setEstado('procesando')
     setResultadoDatafono(null)
     const resultado = await enviarTransaccionDatafono({
       transactionType: 'SALE',
       terminalId: DATAFONO_CONFIG.terminalId,
       totalAmount,
-      invoice: obtenerNumeroFactura(),
+      invoice,
     })
     setResultadoDatafono(resultado)
   }

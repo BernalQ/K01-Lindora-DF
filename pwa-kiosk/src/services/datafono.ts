@@ -98,12 +98,36 @@ function interpretarResponseCode(body: RespuestaDatafonoBody): ResultadoDatafono
   }
 
   const resuelto = porCodigo[codigo] ?? { categoria: 'rechazo-generico' as const, permiteReintentar: true }
-  const mensaje =
-    body.responseCodeDescription ??
-    DESCRIPCION_RESPONSE_CODE[codigo] ??
-    `Transacción rechazada (código ${codigo || 'desconocido'}).`
+
+  // En `rechazo-generico` el código NO está en nuestro mapeo conocido (00/05/
+  // 13/14/96) — se anexa el código crudo entre paréntesis incluso cuando el
+  // propio terminal manda su `responseCodeDescription` (ej. "Parámetros
+  // inválidos en el request"), porque esa descripción por sí sola no le dice
+  // al operador/soporte qué código exacto devolvió el banco/terminal para
+  // poder buscarlo en la documentación de BAC (ver hallazgo de auditoría).
+  // En los demás casos (código ya conocido) no hace falta, el mensaje fijo
+  // ya es suficientemente específico.
+  let mensaje: string
+  if (body.responseCodeDescription) {
+    mensaje =
+      resuelto.categoria === 'rechazo-generico'
+        ? `${body.responseCodeDescription} (código ${codigo || 'desconocido'})`
+        : body.responseCodeDescription
+  } else if (DESCRIPCION_RESPONSE_CODE[codigo]) {
+    mensaje = DESCRIPCION_RESPONSE_CODE[codigo]
+  } else {
+    mensaje = `Transacción rechazada (código ${codigo || 'desconocido'}).`
+  }
 
   return { ...comun, ...resuelto, mensaje }
+}
+
+/** Intenta extraer un mensaje de detalle legible del cuerpo de una respuesta HTTP de error (4xx/5xx) de Transaction Manager, para anexarlo al mensaje genérico de `DESCRIPCION_HTTP`. El formato del cuerpo en estos casos no está documentado con la misma precisión que el de un 200 (`RespuestaDatafonoBody`), así que se prueban varias claves comunes (`message`/`error`/`responseCodeDescription`/`detail`) sin asumir ninguna en particular; si no hay cuerpo, no es JSON, o ninguna clave trae texto útil, se devuelve `undefined` y el mensaje genérico queda solo. */
+function extraerDetalleHttp(cuerpo: unknown): string | undefined {
+  if (!cuerpo || typeof cuerpo !== 'object') return undefined
+  const posible = cuerpo as Record<string, unknown>
+  const candidato = posible.message ?? posible.error ?? posible.responseCodeDescription ?? posible.detail
+  return typeof candidato === 'string' && candidato.trim().length > 0 ? candidato.trim() : undefined
 }
 
 /**
@@ -139,6 +163,51 @@ export function formatMontoDatafono(monto: number): string {
     throw new Error(`monto inválido (${monto}): debe ser un número finito mayor a cero`)
   }
   return monto.toFixed(2)
+}
+
+/**
+ * Convierte el consecutivo legible del kiosko (`generarConsecutivo()`, ej.
+ * "01-2026-10-00007", 17 caracteres con guiones — ver `services/consecutivo.ts`)
+ * en un `invoice` compatible con Transaction Manager.
+ *
+ * Hallazgo de auditoría: antes se enviaba ese mismo string de 17 caracteres
+ * tal cual como `invoice`, que es justo el campo que Transaction Manager
+ * rechazaba con "Parámetros inválidos en el request" (categoría
+ * `rechazo-generico`) — BAC exige un string puramente numérico de máximo 12
+ * caracteres (ver ejemplo documentado "112234"), y el consecutivo del
+ * kiosko usa guiones y un año de 4 dígitos porque esa legibilidad sí importa
+ * en el tiquete impreso y en Codisa (no se toca `generarConsecutivo` ni su
+ * uso en Codisa/tiquete, sólo se deriva de él un `invoice` corto para esta
+ * llamada puntual).
+ *
+ * Se arma concatenando puntoVenta + año (2 dígitos) + mes + consecutivo de 5
+ * dígitos, en ese orden, preservando la misma unicidad por mes/punto de
+ * venta que ya tenía el consecutivo original (sólo se pierden los dos
+ * dígitos de siglo del año, irrelevante en la práctica: "01" + "26" + "10" +
+ * "00007" = "01261000007", 11 caracteres, siempre numérico). Como
+ * `obtenerNumeroFactura()` en `PaymentScreen` cachea el consecutivo en un
+ * ref y lo reutiliza en cada reintento de la MISMA orden, un reintento
+ * manda el mismo `invoice` (correcto: sigue siendo la misma transacción) y
+ * una orden nueva siempre produce uno distinto.
+ *
+ * Si el formato no calza con el esperado (ej. cambia `generarConsecutivo` a
+ * futuro), se degrada a tomar sólo los dígitos del string original (sin
+ * guiones) y quedarse con los últimos 12.
+ */
+export function formatInvoiceDatafono(numeroFacturaKiosko: string): string {
+  const match = /^(\d+)-(\d{4})-(\d{2})-(\d+)$/.exec(numeroFacturaKiosko.trim())
+  let invoice: string
+  if (match) {
+    const [, puntoVenta, año, mes, consecutivo] = match
+    invoice = `${puntoVenta}${año.slice(-2)}${mes}${consecutivo}`
+  } else {
+    invoice = numeroFacturaKiosko.replace(/\D/g, '')
+  }
+  invoice = invoice.slice(-12)
+  if (!invoice) {
+    throw new Error(`no se pudo derivar un número de invoice válido a partir de "${numeroFacturaKiosko}"`)
+  }
+  return invoice
 }
 
 export async function enviarTransaccionDatafono(transaccion: TransaccionDatafono): Promise<ResultadoDatafono> {
@@ -185,14 +254,27 @@ export async function enviarTransaccionDatafono(transaccion: TransaccionDatafono
     }
 
     if (!res.ok) {
+      // A diferencia del camino feliz (HTTP 200, ver más abajo), aquí antes
+      // no se leía el cuerpo de la respuesta en absoluto — un 400 Bad
+      // Request de Transaction Manager podía traer el detalle del campo
+      // mal formado en el body, y se perdía (ver hallazgo de auditoría).
+      // `res.json()` sólo puede leerse una vez, así que se intenta aquí
+      // antes de descartar la respuesta; si no es JSON válido (ej. cuerpo
+      // vacío o texto plano), `extraerDetalleHttp` recibe `undefined` y el
+      // mensaje genérico de `DESCRIPCION_HTTP` queda solo, sin romper el flujo.
+      const cuerpoError = await res.json().catch(() => undefined)
+      const detalle = extraerDetalleHttp(cuerpoError)
       registrarLogDatafono('response', {
         terminalId,
         invoice: (transaccion as { invoice?: string }).invoice,
         httpStatus: res.status,
+        body: cuerpoError,
       })
+      const mensajeBase =
+        DESCRIPCION_HTTP[res.status] ?? `El datáfono respondió con un error inesperado (HTTP ${res.status}).`
       return {
         categoria: 'error-http',
-        mensaje: DESCRIPCION_HTTP[res.status] ?? `El datáfono respondió con un error inesperado (HTTP ${res.status}).`,
+        mensaje: detalle ? `${mensajeBase} (${detalle})` : mensajeBase,
         // 400/404 son errores de la petición misma (no se arreglan reintentando
         // igual); 429/500/503 sí son transitorios.
         permiteReintentar: res.status !== 400 && res.status !== 404,
