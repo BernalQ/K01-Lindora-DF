@@ -9,7 +9,7 @@ import AdminScreen from './components/screens/AdminScreen'
 import { useCartStore } from './store/cartStore'
 import { useMesaStore } from './store/mesaStore'
 import type { Cliente } from './types/factura'
-import { useLanguage } from './context/LanguageContext'
+import { useLanguage } from './context/useLanguage'
 
 type Screen = 'welcome' | 'mesaSetup' | 'menu' | 'payment' | 'cedula' | 'registroCliente' | 'admin'
 

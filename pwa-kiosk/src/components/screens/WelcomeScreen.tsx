@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import logoBlanco from '../../assets/logo/optimized/logo-blanco.png'
-import { useLanguage } from '../../context/LanguageContext'
+import { useLanguage } from '../../context/useLanguage'
 import SalirKioskoModal from '../ui/SalirKioskoModal'
 
 interface WelcomeScreenProps {

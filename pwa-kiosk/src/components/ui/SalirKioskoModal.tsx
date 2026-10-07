@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { salirDeKiosko } from '../../services/systemBridge'
-import { useLanguage } from '../../context/LanguageContext'
+import { useLanguage } from '../../context/useLanguage'
 
 /** Misma clave numérica de 6 dígitos que protege `AdminScreen` (ver ese archivo). */
 const PIN_VALIDO = '123456'
@@ -65,10 +65,21 @@ export default function SalirKioskoModal({ onClose }: SalirKioskoModalProps) {
     setEstado('ingresando')
   }
 
+  // Evita que un tap fuera del modal (backdrop) lo cierre "silenciosamente"
+  // mientras `salirDeKiosko()` sigue en vuelo (`estado === 'saliendo'`) — ver
+  // hallazgo de auditoría. En ese momento ya se le pidió al print-bridge que
+  // mate el proceso del navegador; cerrar el modal no cancela esa operación,
+  // sólo ocultaría al operador que sigue en curso (o que falló, si termina
+  // en `'fallo'`, estado que sí permite cerrar normalmente).
+  const handleCerrar = () => {
+    if (estado === 'saliendo') return
+    onClose()
+  }
+
   const teclas = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫']
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6" onClick={handleCerrar}>
       <div
         className="flex w-full max-w-sm flex-col items-center gap-6 rounded-3xl bg-gradient-to-b from-wood-950 via-wood-900 to-wood-950 px-6 py-8 text-cream-50 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -134,13 +145,15 @@ export default function SalirKioskoModal({ onClose }: SalirKioskoModalProps) {
           </>
         )}
 
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-sm font-semibold text-cream-50/50 underline underline-offset-4"
-        >
-          {t('salirKiosko.cancelar')}
-        </button>
+        {estado !== 'saliendo' && (
+          <button
+            type="button"
+            onClick={handleCerrar}
+            className="text-sm font-semibold text-cream-50/50 underline underline-offset-4"
+          >
+            {t('salirKiosko.cancelar')}
+          </button>
+        )}
       </div>
     </div>
   )

@@ -13,7 +13,7 @@ import PrecioConIvi from '../ui/PrecioConIvi'
 import { cartTotal, lineTerminosTexto, useCartStore, type CartLine } from '../../store/cartStore'
 import { useMesaStore } from '../../store/mesaStore'
 import type { CategoryId, Language, Product } from '../../types/catalog'
-import { useLanguage } from '../../context/LanguageContext'
+import { useLanguage } from '../../context/useLanguage'
 
 /**
  * Resume, en un solo texto, los detalles de personalización de una línea

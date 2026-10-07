@@ -1,13 +1,25 @@
 import { useState } from 'react'
 import { guardarCliente } from '../../services/facturacion'
+import { completarTipoPersonaPorCedula } from '../../services/wsdf'
 import type { Cliente } from '../../types/factura'
-import { useLanguage } from '../../context/LanguageContext'
+import { useLanguage } from '../../context/useLanguage'
 
 interface RegistroClienteScreenProps {
   cedula: string
   onBack: () => void
   onGuardado: (cliente: Cliente) => void
 }
+
+/**
+ * Formato mínimo aceptable de correo electrónico (no pretende cubrir el
+ * 100% del RFC 5322, sólo atrapar errores obvios de tipeo —
+ * "algo@algo.algo"). Ambos campos (correo/teléfono) son opcionales: un
+ * campo vacío siempre se considera válido, sólo se valida el formato cuando
+ * el cliente escribió algo (ver `correoValido`/`telefonoValido` abajo).
+ */
+const CORREO_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+/** Acepta dígitos, espacios, "+" y "-", entre 8 y 15 caracteres — suficiente para números locales (ej. "8888-8888") o con código de país (ej. "+506 8888 8888"). */
+const TELEFONO_REGEX = /^[0-9+\-\s]{8,15}$/
 
 /**
  * Segundo paso del flujo "Pago y Factura Electrónica" cuando la cédula no
@@ -23,17 +35,28 @@ export default function RegistroClienteScreen({ cedula, onBack, onGuardado }: Re
   const [guardando, setGuardando] = useState(false)
   const [avisoSinConexion, setAvisoSinConexion] = useState(false)
 
-  const puedeGuardar = nombre.trim().length > 0 && !guardando
+  // Campos opcionales: vacío siempre es válido, sólo se exige el formato
+  // correcto cuando el operador/cliente escribió algo (ver hallazgo de
+  // auditoría — antes no se validaba el formato de correo/teléfono).
+  const correoValido = correo.trim().length === 0 || CORREO_REGEX.test(correo.trim())
+  const telefonoValido = telefono.trim().length === 0 || TELEFONO_REGEX.test(telefono.trim())
+
+  const puedeGuardar = nombre.trim().length > 0 && correoValido && telefonoValido && !guardando
 
   const handleGuardar = async () => {
     if (!puedeGuardar) return
-    const cliente: Cliente = {
+    // `completarTipoPersonaPorCedula` deriva tipoPersona/tipoIdentificacion
+    // de la longitud de la cédula (ver services/wsdf.ts) — este registro
+    // manual no pide ese dato explícitamente, así que sin esto el pedido
+    // WsDf asumiría por defecto "física nacional" aunque la cédula tecleada
+    // sea en realidad jurídica o de extranjero (ver hallazgo de auditoría).
+    const cliente: Cliente = completarTipoPersonaPorCedula({
       cedula,
       nombre: nombre.trim(),
       correo: correo.trim(),
       telefono: telefono.trim(),
       direccion: direccion.trim(),
-    }
+    })
     setGuardando(true)
     const resultado = await guardarCliente(cliente)
     setGuardando(false)
@@ -87,8 +110,11 @@ export default function RegistroClienteScreen({ cedula, onBack, onGuardado }: Re
               inputMode="email"
               value={correo}
               onChange={(e) => setCorreo(e.target.value)}
-              className="w-full rounded-xl border-2 border-wood-200 bg-white px-4 py-3 text-lg text-wood-900 outline-none focus:border-brand-red"
+              className={`w-full rounded-xl border-2 bg-white px-4 py-3 text-lg text-wood-900 outline-none focus:border-brand-red ${
+                correoValido ? 'border-wood-200' : 'border-amber-400'
+              }`}
             />
+            {!correoValido && <p className="mt-1 text-sm text-amber-600">{t('registro.correoInvalido')}</p>}
           </div>
 
           <div>
@@ -101,8 +127,11 @@ export default function RegistroClienteScreen({ cedula, onBack, onGuardado }: Re
               inputMode="tel"
               value={telefono}
               onChange={(e) => setTelefono(e.target.value)}
-              className="w-full rounded-xl border-2 border-wood-200 bg-white px-4 py-3 text-lg text-wood-900 outline-none focus:border-brand-red"
+              className={`w-full rounded-xl border-2 bg-white px-4 py-3 text-lg text-wood-900 outline-none focus:border-brand-red ${
+                telefonoValido ? 'border-wood-200' : 'border-amber-400'
+              }`}
             />
+            {!telefonoValido && <p className="mt-1 text-sm text-amber-600">{t('registro.telefonoInvalido')}</p>}
           </div>
 
           <div>

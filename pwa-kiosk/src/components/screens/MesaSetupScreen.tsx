@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import logoBlanco from '../../assets/logo/optimized/logo-blanco.png'
 import piernaCerdoFlyer from '../../assets/publicidad/pierna-de-cerdo-flyer.jpg'
 import { RAZAS_GANADO } from '../../data/razasGanado'
-import { mesasBloqueadas } from '../../services/mesaLocks'
-import { useLanguage } from '../../context/LanguageContext'
+import { mesasBloqueadas, suscribirCambiosMesaLocks } from '../../services/mesaLocks'
+import { useLanguage } from '../../context/useLanguage'
 
 /** Cada cuánto se refresca el listado de identificadores bloqueados mientras
  * esta pantalla permanece abierta, para que un bloqueo que expira (30 min)
@@ -45,9 +45,20 @@ export default function MesaSetupScreen({ onContinuar, onCancelar }: MesaSetupSc
 
   // Refresca periódicamente cuáles identificadores siguen bloqueados, para
   // que uno que cumple sus 30 minutos vuelva a habilitarse sin recargar.
+  // Este polling sigue siendo necesario incluso con la suscripción de abajo:
+  // la expiración por tiempo no dispara ningún evento de cambio explícito.
   useEffect(() => {
     const id = setInterval(() => setBloqueadas(mesasBloqueadas()), REFRESCO_BLOQUEOS_MS)
     return () => clearInterval(id)
+  }, [])
+
+  // Además del polling, se suscribe a cambios explícitos (bloquear/liberar)
+  // hechos desde otra pestaña/ventana de este mismo kiosko (ver
+  // `suscribirCambiosMesaLocks` en `services/mesaLocks.ts`), para reflejarlos
+  // casi al instante en vez de esperar hasta 15s. No sincroniza entre
+  // kioskos físicos distintos (localStorage es por dispositivo).
+  useEffect(() => {
+    return suscribirCambiosMesaLocks(() => setBloqueadas(mesasBloqueadas()))
   }, [])
 
   const puedeContinuar = compartida !== null && raza !== '' && !bloqueadas.has(raza)

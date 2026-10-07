@@ -10,8 +10,9 @@ import {
 } from '../../data/catalog'
 import PrecioConIvi from '../ui/PrecioConIvi'
 import ProductImage from '../ui/ProductImage'
-import TicketPopup, { type TicketPopupSeccion } from '../ui/TicketPopup'
+import TicketPopup from '../ui/TicketPopup'
 import WsDfPopup from '../ui/WsDfPopup'
+import DatafonoPopup from '../ui/DatafonoPopup'
 import { cartItemCount, cartTotal, lineTerminosTexto, useCartStore } from '../../store/cartStore'
 import { useMesaStore } from '../../store/mesaStore'
 import { generarFactura, registrarVentaSimple } from '../../services/facturacion'
@@ -20,7 +21,9 @@ import { encolarVenta } from '../../services/offlineQueue'
 import { enviarVentaACodisa } from '../../services/codisa'
 import { enviarVentaAAwsIot } from '../../services/awsIot'
 import { construirPedidoWsDf, enviarPedidoWsDf, validarPedidoWsDf } from '../../services/wsdf'
-import { enviarTicket } from '../../services/backendPrint'
+import { enviarTicket, type ResultadoImpresion } from '../../services/backendPrint'
+import ImpresionErrorPopup from '../ui/ImpresionErrorPopup'
+import { DATAFONO_CONFIG, enviarTransaccionDatafono, formatMontoDatafono } from '../../services/datafono'
 import {
   NOMBRES_IMPRESORA,
   generarTickets,
@@ -29,10 +32,12 @@ import {
   type PrinterId,
   type TicketLine,
 } from '../../services/tickets'
+import CodisaOrdenPopup from '../ui/CodisaOrdenPopup'
 import type { FacturaItem } from '../../types/factura'
 import type { OrderItem, Venta } from '../../types/order'
-import type { ValidacionWsDf, WsDfPayload } from '../../types/wsdf'
-import { useLanguage } from '../../context/LanguageContext'
+import type { ResultadoOrdenCodisa, ValidacionWsDf, WsDfPayload } from '../../types/wsdf'
+import type { ResultadoDatafono } from '../../types/datafono'
+import { useLanguage } from '../../context/useLanguage'
 
 /** IDs de "comenzar" que también se ofrecen como sugerencia adicional en el pago. */
 const SUGERENCIAS_IDS_EXTRA = ['elote', 'ensalada-griega', 'queso-provolone']
@@ -67,10 +72,13 @@ type EstadoFactura = 'idle' | 'generando'
  *   (sólo verificación en esta fase, ver `services/wsdf.ts`).
  * - 'popupCliente': muestra el comprobante del comensal que se imprimiría.
  * - 'preguntaOtraOrden': (sólo mesa compartida) pregunta obligatoria si hay otra orden.
- * - 'popupConsolidado': muestra el tiquete de carnicería/restaurante (por orden
- *   individual en mesa simple, o consolidado al cerrar una mesa compartida).
+ *
+ * El tiquete de carnicería/restaurante (por orden individual en mesa simple,
+ * o consolidado al cerrar una mesa compartida) ya NO tiene un pop-up propio:
+ * se envía a imprimir directamente (ver el efecto de confirmación de venta y
+ * `handleOtraOrdenNo` más abajo), sin ventana emergente de confirmación.
  */
-type PasoPostPago = 'ninguno' | 'popupWsDf' | 'popupCliente' | 'preguntaOtraOrden' | 'popupConsolidado'
+type PasoPostPago = 'ninguno' | 'popupWsDf' | 'popupCliente' | 'preguntaOtraOrden'
 
 export default function PaymentScreen({
   onBack,
@@ -90,6 +98,13 @@ export default function PaymentScreen({
   const clearCart = useCartStore((s) => s.clear)
   const [estado, setEstado] = useState<EstadoPago>('idle')
   const [estadoFactura, setEstadoFactura] = useState<EstadoFactura>('idle')
+  // Resultado de la última transacción enviada al datáfono BAC (Transaction
+  // Manager, ver services/datafono.ts). No-nulo mientras el pop-up
+  // `DatafonoPopup` está visible — ver `handleCobrar`/`handleReintentarDatafono`/
+  // `handleCerrarDatafono` más abajo. Este flujo de pop-ups sólo aplica al
+  // pago con datáfono (único método de cobro de este kiosko), nunca a
+  // factura/WS DF/tickets, que ya tienen sus propios pop-ups.
+  const [resultadoDatafono, setResultadoDatafono] = useState<ResultadoDatafono | null>(null)
 
   const mesaCompartida = useMesaStore((s) => s.compartida)
   const mesaId = useMesaStore((s) => s.mesaId)
@@ -110,11 +125,20 @@ export default function PaymentScreen({
   // Estado del flujo de tiquetes/popups posterior a la aprobación del pago.
   const [paso, setPaso] = useState<PasoPostPago>('ninguno')
   const [ticketsGenerados, setTicketsGenerados] = useState<Record<PrinterId, TicketLine[]> | null>(null)
-  const [ticketsConsolidados, setTicketsConsolidados] = useState<{
-    carniceria: TicketLine[]
-    restaurante: TicketLine[]
-  } | null>(null)
   const [cerrandoMesa, setCerrandoMesa] = useState(false)
+  // Resultado real de cada `enviarTicket` (ver services/backendPrint.ts),
+  // para poder avisar al operador cuando una impresión falló de verdad
+  // (`ok: false, simulado: false`) en vez de asumir silenciosamente que
+  // todo salió bien (ver hallazgo de auditoría). `null` = aún no se conoce
+  // el resultado (todavía en vuelo, o no aplica en esta mesa/paso).
+  const [impresionCliente, setImpresionCliente] = useState<ResultadoImpresion | null>(null)
+  const [impresionCarniceria, setImpresionCarniceria] = useState<ResultadoImpresion | null>(null)
+  const [impresionRestaurante, setImpresionRestaurante] = useState<ResultadoImpresion | null>(null)
+  // No-nulo cuando el tiquete consolidado de cierre de mesa (carnicería
+  // y/o restaurante, ver `intentarImprimirCierre`/`handleOtraOrdenNo`) falló
+  // con un error real de impresión: muestra `ImpresionErrorPopup` con
+  // opción de reintentar o continuar sin imprimir.
+  const [cerrandoMesaError, setCerrandoMesaError] = useState<PrinterId[] | null>(null)
   const yaProcesado = useRef(false)
   // Consecutivo de la orden (ver services/consecutivo.ts): se genera una sola
   // vez por venta, sin importar si primero lo consume la generación de la
@@ -133,11 +157,87 @@ export default function PaymentScreen({
   const [ventaConfirmada, setVentaConfirmada] = useState<Venta | null>(null)
   const [wsdfPayload, setWsdfPayload] = useState<WsDfPayload | null>(null)
   const [wsdfValidacion, setWsdfValidacion] = useState<ValidacionWsDf | null>(null)
+  // Envío real del pedido a Codisa (`?action=orden`, ver `services/wsdf.ts`):
+  // `enviandoOrdenCodisa` controla el texto/disabled de los botones de
+  // `WsDfPopup` mientras el POST está en vuelo; `resultadoOrdenCodisa`
+  // (no-nulo) hace que se muestre `CodisaOrdenPopup` con el desenlace
+  // (éxito/error) en vez del propio `WsDfPopup`.
+  const [enviandoOrdenCodisa, setEnviandoOrdenCodisa] = useState(false)
+  const [resultadoOrdenCodisa, setResultadoOrdenCodisa] = useState<ResultadoOrdenCodisa | null>(null)
 
-  const handleCobrar = () => {
+  /**
+   * Cobro real con el datáfono BAC (Transaction Manager, ver
+   * `services/datafono.ts`): envía una transacción SALE por el monto total
+   * de la orden y muestra el resultado en `DatafonoPopup` (ver render más
+   * abajo). `estado` permanece en 'procesando' mientras se espera la
+   * respuesta Y mientras el pop-up de resultado está abierto — sólo pasa a
+   * 'aprobado' (lo que dispara el resto del flujo: tickets, WS DF, etc., ver
+   * el efecto más abajo) cuando el usuario cierra un pop-up de transacción
+   * aprobada (ver `handleCerrarDatafono`).
+   */
+  const handleCobrar = async () => {
+    // Validación de monto ANTES de tocar red o cambiar `estado`: si el total
+    // no es un número finito mayor a cero (ej. carrito corrupto), se corta
+    // aquí mismo — `formatMontoDatafono` lanza en ese caso (ver
+    // services/datafono.ts) — y se muestra el error en el pop-up habitual,
+    // sin llegar a enviar ninguna petición al datáfono.
+    let totalAmount: string
+    try {
+      totalAmount = formatMontoDatafono(total)
+    } catch (err) {
+      setResultadoDatafono({
+        categoria: 'monto-invalido',
+        mensaje: `El monto de la orden no es válido para cobrar (${(err as Error).message}). Regrese al menú y revise el pedido.`,
+        permiteReintentar: false,
+      })
+      return
+    }
+
     setEstado('procesando')
-    // Simulación del datáfono: en producción esto se reemplaza por la respuesta real del terminal de pago.
-    setTimeout(() => setEstado('aprobado'), 1800)
+    setResultadoDatafono(null)
+    const resultado = await enviarTransaccionDatafono({
+      transactionType: 'SALE',
+      terminalId: DATAFONO_CONFIG.terminalId,
+      totalAmount,
+      invoice: obtenerNumeroFactura(),
+    })
+    setResultadoDatafono(resultado)
+  }
+
+  /** "Intentar de nuevo" del pop-up de datáfono: reenvía la misma transacción SALE. */
+  const handleReintentarDatafono = () => {
+    setResultadoDatafono(null)
+    handleCobrar()
+  }
+
+  /**
+   * Cierra el pop-up de resultado del datáfono. Si la transacción fue
+   * aprobada, recién ahora se avanza `estado` a 'aprobado' (dispara el
+   * efecto de confirmación de venta); si no, se vuelve a 'idle' para que el
+   * usuario pueda intentar cobrar de nuevo desde el botón principal.
+   *
+   * CASO CRÍTICO — 'transaccion-en-curso': esta categoría significa que esta
+   * llamada en particular fue rechazada SIN tocar red porque OTRA llamada
+   * anterior para el mismo terminal (la transacción real) sigue en vuelo
+   * (ver `terminalesConTransaccionActiva` en `services/datafono.ts`). Si
+   * aquí revirtiéramos `estado` a 'idle', se reactivarían "Cobrar"/"Cambiar
+   * forma de pago" (y, desde ahí, "Cancelar Orden") MIENTRAS la tarjeta del
+   * cliente todavía podría estar cobrándose — riesgo real de doble cobro, o
+   * de una venta aprobada que nunca llega a registrarse porque el operador
+   * ya canceló/reinició el flujo. Por eso NO se toca `estado` en este caso:
+   * se deja como 'procesando' (pantalla de "Sigue las instrucciones…", sin
+   * botones de cobro/cancelación visibles) hasta que la transacción real
+   * resuelva y dispare su propio `setResultadoDatafono` con el desenlace
+   * definitivo (aprobada/denegada/etc.), que sí se procesa normalmente.
+   */
+  const handleCerrarDatafono = () => {
+    if (resultadoDatafono?.categoria === 'transaccion-en-curso') {
+      setResultadoDatafono(null)
+      return
+    }
+    const fueAprobada = resultadoDatafono?.categoria === 'aprobada'
+    setResultadoDatafono(null)
+    setEstado(fueAprobada ? 'aprobado' : 'idle')
   }
 
   /**
@@ -250,11 +350,17 @@ export default function PaymentScreen({
 
     const tickets = generarTickets(nuevaVenta)
 
+    setImpresionCliente(null)
+    setImpresionCarniceria(null)
+    setImpresionRestaurante(null)
+
     if (mesaCompartida) {
       // Mesa compartida: sólo se envía de inmediato el comprobante del
       // comensal; carnicería/restaurante se acumulan y se imprimen
       // consolidados una sola vez al cerrar la mesa (ver handleOtraOrdenNo).
       enviarTicket('cliente', tickets.cliente)
+        .then(setImpresionCliente)
+        .catch((err) => console.error('[PaymentScreen] Error inesperado enviando ticket de cliente:', err))
       registrarOrden(nuevaVenta)
     } else {
       // Mesa simple: las 3 estaciones (cliente, carnicería, restaurante) se
@@ -264,12 +370,19 @@ export default function PaymentScreen({
       // escpos.ts), así que no hay motivo para esperar una antes de lanzar
       // la siguiente. No se bloquea este efecto por el resultado: cada
       // llamada ya maneja sus propios errores/simulación internamente (ver
-      // `ResultadoImpresion` en backendPrint.ts).
-      Promise.all([
-        enviarTicket('cliente', tickets.cliente),
-        enviarTicket('carniceria', tickets.carniceria),
-        enviarTicket('restaurante', tickets.restaurante),
-      ]).catch((err) => console.error('[PaymentScreen] Error inesperado enviando tickets:', err))
+      // `ResultadoImpresion` en backendPrint.ts) y su resultado se guarda en
+      // estado para poder avisar al operador (ver banner no-bloqueante en
+      // el render, y `handleReintentarImpresion` para reintentar una sola
+      // impresora sin repetir las otras).
+      enviarTicket('cliente', tickets.cliente)
+        .then(setImpresionCliente)
+        .catch((err) => console.error('[PaymentScreen] Error inesperado enviando ticket de cliente:', err))
+      enviarTicket('carniceria', tickets.carniceria)
+        .then(setImpresionCarniceria)
+        .catch((err) => console.error('[PaymentScreen] Error inesperado enviando ticket de carnicería:', err))
+      enviarTicket('restaurante', tickets.restaurante)
+        .then(setImpresionRestaurante)
+        .catch((err) => console.error('[PaymentScreen] Error inesperado enviando ticket de restaurante:', err))
     }
 
     setTicketsGenerados(tickets)
@@ -278,13 +391,24 @@ export default function PaymentScreen({
   }, [estado, esperandoFactura])
 
   /**
-   * "Confirmar envío" del pop-up WS DF: en esta fase sólo registra el
-   * intento localmente (stub `enviarPedidoWsDf`, sin llamar todavía al
-   * endpoint real) y avanza al siguiente paso del flujo.
+   * "Confirmar envío" del pop-up WS DF: envía el pedido real a Codisa
+   * (`enviarPedidoWsDf`, ver `services/wsdf.ts`) y muestra el desenlace en
+   * `CodisaOrdenPopup` (éxito o error con reintentar). El `paso` permanece
+   * en 'popupWsDf' durante todo este intercambio — sólo avanza a
+   * 'popupCliente' cuando el usuario cierra `CodisaOrdenPopup` (ver
+   * `handleCerrarOrdenCodisa`), sea cual sea el desenlace: la venta ya
+   * quedó cobrada e impresa, así que un error de Codisa no debe bloquear
+   * el resto del flujo del kiosko.
    */
-  const handleConfirmarEnvioWsDf = () => {
-    if (wsdfPayload) enviarPedidoWsDf(wsdfPayload)
-    setPaso('popupCliente')
+  const handleConfirmarEnvioWsDf = async () => {
+    if (!wsdfPayload) {
+      setPaso('popupCliente')
+      return
+    }
+    setEnviandoOrdenCodisa(true)
+    const resultado = await enviarPedidoWsDf(wsdfPayload)
+    setEnviandoOrdenCodisa(false)
+    setResultadoOrdenCodisa(resultado)
   }
 
   /** "Cancelar" del pop-up WS DF: no envía nada, simplemente continúa el flujo (la venta ya quedó cobrada e impresa). */
@@ -292,9 +416,34 @@ export default function PaymentScreen({
     setPaso('popupCliente')
   }
 
-  /** Cierra el popup del comprobante del comensal y avanza al siguiente paso. */
+  /** "Intentar de nuevo" del pop-up de resultado de Codisa: reenvía el mismo payload. */
+  const handleReintentarOrdenCodisa = () => {
+    setResultadoOrdenCodisa(null)
+    handleConfirmarEnvioWsDf()
+  }
+
+  /** Cierra el pop-up de resultado de Codisa y avanza al siguiente paso del flujo, sin importar el desenlace. */
+  const handleCerrarOrdenCodisa = () => {
+    setResultadoOrdenCodisa(null)
+    setPaso('popupCliente')
+  }
+
+  /**
+   * Cierra el popup del comprobante del comensal. En mesa compartida avanza
+   * a la pregunta de "otra orden"; en mesa simple termina el flujo ahí mismo:
+   * los tiquetes de carnicería/restaurante ya se enviaron a imprimir de
+   * inmediato junto con el del comensal (ver el efecto de confirmación de
+   * venta arriba), sin pop-up de confirmación propio (ver requerimiento), así
+   * que no hay nada más que mostrar.
+   */
   const handleCerrarPopupCliente = () => {
-    setPaso(mesaCompartida ? 'preguntaOtraOrden' : 'popupConsolidado')
+    if (mesaCompartida) {
+      setPaso('preguntaOtraOrden')
+      return
+    }
+    clearCart()
+    setPaso('ninguno')
+    onVolverInicio()
   }
 
   /** "Sí, otra orden": limpia el carrito para la siguiente orden, conserva el ID de mesa. */
@@ -305,44 +454,96 @@ export default function PaymentScreen({
   }
 
   /**
-   * "No, cerrar mesa": genera y envía el tiquete consolidado de
-   * carnicería/restaurante (una sola vez, con todas las órdenes de la mesa)
-   * antes de mostrar el popup correspondiente.
+   * "Reintenta" una sola impresora de la venta recién confirmada (mesa
+   * simple), usando los mismos tickets ya generados (`ticketsGenerados`) —
+   * no se vuelve a generar el ticket ni se reenvían las otras estaciones.
+   * Se usa tanto desde el banner no-bloqueante como desde el pop-up del
+   * comprobante del comensal (ver `TicketPopup`/render más abajo).
    */
-  const handleOtraOrdenNo = async () => {
-    if (cerrandoMesa) return
-    setCerrandoMesa(true)
-    const carniceria = ticketConsolidadoCarniceria(mesaId, ordenesMesa)
-    const restaurante = ticketConsolidadoRestaurante(mesaId, ordenesMesa)
-    await Promise.all([enviarTicket('carniceria', carniceria), enviarTicket('restaurante', restaurante)])
-    setTicketsConsolidados({ carniceria, restaurante })
-    setCerrandoMesa(false)
-    setPaso('popupConsolidado')
+  const handleReintentarImpresion = (printer: PrinterId) => {
+    if (!ticketsGenerados) return
+    if (printer === 'cliente') {
+      setImpresionCliente(null)
+      enviarTicket('cliente', ticketsGenerados.cliente).then(setImpresionCliente)
+    } else if (printer === 'carniceria') {
+      setImpresionCarniceria(null)
+      enviarTicket('carniceria', ticketsGenerados.carniceria).then(setImpresionCarniceria)
+    } else {
+      setImpresionRestaurante(null)
+      enviarTicket('restaurante', ticketsGenerados.restaurante).then(setImpresionRestaurante)
+    }
   }
 
-  /** Cierra el popup de carnicería/restaurante y vuelve a la bienvenida. */
-  const handleCerrarPopupConsolidado = () => {
-    if (mesaCompartida) {
-      cerrarMesaStore()
+  /**
+   * Genera y envía el tiquete consolidado de carnicería/restaurante del
+   * cierre de mesa (una sola vez, con todas las órdenes de la mesa).
+   * Devuelve `true` si ambas estaciones imprimieron sin error real (el caso
+   * simulado de desarrollo SÍ cuenta como éxito aquí, igual que en
+   * `enviarTicket`); si alguna falló de verdad, guarda cuáles en
+   * `cerrandoMesaError` (para `ImpresionErrorPopup`) y devuelve `false`.
+   *
+   * Antes `handleOtraOrdenNo` no revisaba este resultado y, combinado con
+   * la falta de timeout en `postPrint` (ver `services/backendPrint.ts`),
+   * podía quedar colgado indefinidamente en "Cerrando mesa…" sin que el
+   * operador se enterara de que algo falló (ver hallazgo de auditoría).
+   */
+  const intentarImprimirCierre = async (): Promise<boolean> => {
+    const carniceria = ticketConsolidadoCarniceria(mesaId, ordenesMesa)
+    const restaurante = ticketConsolidadoRestaurante(mesaId, ordenesMesa)
+    const [resultadoCarniceria, resultadoRestaurante] = await Promise.all([
+      enviarTicket('carniceria', carniceria),
+      enviarTicket('restaurante', restaurante),
+    ])
+
+    const fallidas: PrinterId[] = []
+    if (!resultadoCarniceria.ok && !resultadoCarniceria.simulado) fallidas.push('carniceria')
+    if (!resultadoRestaurante.ok && !resultadoRestaurante.simulado) fallidas.push('restaurante')
+
+    if (fallidas.length > 0) {
+      setCerrandoMesaError(fallidas)
+      return false
     }
+    return true
+  }
+
+  /** Cierra la mesa de verdad: limpia carrito/mesa y vuelve a la bienvenida. Sólo debe llamarse después de que la impresión de cierre tuvo éxito (o el operador decidió continuar sin imprimir). */
+  const finalizarCierreMesa = () => {
+    cerrarMesaStore()
     clearCart()
     setPaso('ninguno')
     onVolverInicio()
   }
 
-  const seccionesCocina: TicketPopupSeccion[] | null = mesaCompartida
-    ? ticketsConsolidados
-      ? [
-          { titulo: NOMBRES_IMPRESORA.carniceria, lineas: ticketsConsolidados.carniceria },
-          { titulo: NOMBRES_IMPRESORA.restaurante, lineas: ticketsConsolidados.restaurante },
-        ]
-      : null
-    : ticketsGenerados
-      ? [
-          { titulo: NOMBRES_IMPRESORA.carniceria, lineas: ticketsGenerados.carniceria },
-          { titulo: NOMBRES_IMPRESORA.restaurante, lineas: ticketsGenerados.restaurante },
-        ]
-      : null
+  /**
+   * "No, cerrar mesa": intenta imprimir el tiquete consolidado y, si tuvo
+   * éxito (real o simulado), cierra la mesa de inmediato — sin pop-up de
+   * confirmación propio (ver requerimiento). Si hubo un error real de
+   * impresión, `intentarImprimirCierre` ya dejó `cerrandoMesaError` listo
+   * para mostrar `ImpresionErrorPopup`; el cierre se completa desde ahí
+   * (`handleReintentarImpresionCierre`/`handleContinuarSinImprimirCierre`).
+   */
+  const handleOtraOrdenNo = async () => {
+    if (cerrandoMesa) return
+    setCerrandoMesa(true)
+    const exito = await intentarImprimirCierre()
+    setCerrandoMesa(false)
+    if (exito) finalizarCierreMesa()
+  }
+
+  /** "Reintentar" del pop-up de error de impresión de cierre: vuelve a generar y enviar el tiquete consolidado. */
+  const handleReintentarImpresionCierre = async () => {
+    setCerrandoMesaError(null)
+    setCerrandoMesa(true)
+    const exito = await intentarImprimirCierre()
+    setCerrandoMesa(false)
+    if (exito) finalizarCierreMesa()
+  }
+
+  /** "Continuar sin imprimir" del pop-up de error de impresión de cierre: el pedido ya quedó registrado, así que se cierra la mesa igual. */
+  const handleContinuarSinImprimirCierre = () => {
+    setCerrandoMesaError(null)
+    finalizarCierreMesa()
+  }
 
   /**
    * Contenido de confirmación del pago aprobado (logo, check, total, estado
@@ -714,24 +915,87 @@ export default function PaymentScreen({
         </main>
       )}
 
-      {/* Popup 0: verificación del payload WS DF (Codisa), sólo visualización en esta fase */}
-      {paso === 'popupWsDf' && ventaConfirmada && wsdfPayload && wsdfValidacion && (
+      {/* Popup 0: verificación del payload antes de enviarlo a Codisa (factura electrónica) */}
+      {paso === 'popupWsDf' && ventaConfirmada && wsdfPayload && wsdfValidacion && !resultadoOrdenCodisa && (
         <WsDfPopup
           venta={ventaConfirmada}
           payload={wsdfPayload}
           validacion={wsdfValidacion}
           onConfirmar={handleConfirmarEnvioWsDf}
           onCancelar={handleCancelarWsDf}
+          enviando={enviandoOrdenCodisa}
         />
       )}
 
-      {/* Popup 1: comprobante del comensal (cliente) */}
+      {/* Popup 0b: desenlace del envío a Codisa (éxito/error, con reintentar) */}
+      {paso === 'popupWsDf' && resultadoOrdenCodisa && (
+        <CodisaOrdenPopup
+          resultado={resultadoOrdenCodisa}
+          onReintentar={handleReintentarOrdenCodisa}
+          onCerrar={handleCerrarOrdenCodisa}
+        />
+      )}
+
+      {/* Popup 1: comprobante del comensal (cliente) — refleja el resultado
+          real de `enviarTicket` (ver `impresionCliente`), en vez de asumir
+          silenciosamente que se imprimió (ver hallazgo de auditoría). */}
       {paso === 'popupCliente' && ticketsGenerados && (
         <TicketPopup
           titulo={t('confirmation.popupClienteTitulo')}
           secciones={[{ titulo: NOMBRES_IMPRESORA.cliente, lineas: ticketsGenerados.cliente }]}
           textoBoton={t('common.cerrar')}
           onCerrar={handleCerrarPopupCliente}
+          estadoImpresion={impresionCliente}
+          onReintentarImpresion={() => handleReintentarImpresion('cliente')}
+        />
+      )}
+
+      {/* Banner no-bloqueante: avisa de cualquier impresión con error REAL
+          (no el caso simulado de desarrollo) de las estaciones de la venta
+          recién confirmada (mesa simple, o el comprobante del comensal en
+          mesa compartida), con opción de reintentar sin bloquear el resto
+          del flujo (ver hallazgo de auditoría — antes no había feedback
+          alguno de impresión fallida). */}
+      {([
+        { printer: 'carniceria' as const, resultado: impresionCarniceria },
+        { printer: 'restaurante' as const, resultado: impresionRestaurante },
+        { printer: 'cliente' as const, resultado: impresionCliente },
+      ].filter(({ resultado }) => resultado && !resultado.ok && !resultado.simulado).length > 0) && (
+        <div className="fixed inset-x-0 top-0 z-40 flex flex-col gap-1 p-2">
+          {[
+            { printer: 'carniceria' as const, resultado: impresionCarniceria },
+            { printer: 'restaurante' as const, resultado: impresionRestaurante },
+            { printer: 'cliente' as const, resultado: impresionCliente },
+          ]
+            .filter(({ resultado }) => resultado && !resultado.ok && !resultado.simulado)
+            .map(({ printer }) => (
+              <div
+                key={printer}
+                className="flex items-center justify-between gap-3 rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-lg"
+              >
+                <span>{t('payment.impresionFallidaBanner', { impresora: NOMBRES_IMPRESORA[printer] })}</span>
+                <button
+                  type="button"
+                  onClick={() => handleReintentarImpresion(printer)}
+                  className="shrink-0 rounded-lg bg-white/20 px-3 py-1 font-bold underline"
+                >
+                  {t('payment.reintentar')}
+                </button>
+              </div>
+            ))}
+        </div>
+      )}
+
+      {/* Pop-up de error real de impresión al cerrar mesa compartida (ver
+          `intentarImprimirCierre`/`handleOtraOrdenNo`): con opción de
+          reintentar o continuar sin imprimir (el pedido ya quedó
+          registrado de todas formas). */}
+      {cerrandoMesaError && (
+        <ImpresionErrorPopup
+          impresoras={cerrandoMesaError}
+          reintentando={cerrandoMesa}
+          onReintentar={handleReintentarImpresionCierre}
+          onContinuar={handleContinuarSinImprimirCierre}
         />
       )}
 
@@ -739,13 +1003,20 @@ export default function PaymentScreen({
           se muestra inline en la columna derecha de la pantalla de aprobado
           (ver bloque `mesaCompartida` arriba), para un flujo más claro. */}
 
-      {/* Popup 2: tiquete de carnicería/restaurante (por orden o consolidado) */}
-      {paso === 'popupConsolidado' && seccionesCocina && (
-        <TicketPopup
-          titulo={t('confirmation.popupCocinaTitulo')}
-          secciones={seccionesCocina}
-          textoBoton={t('common.cerrar')}
-          onCerrar={handleCerrarPopupConsolidado}
+      {/* El tiquete de carnicería/restaurante ya NO tiene pop-up de
+          confirmación propio (ver requerimiento): se envía a imprimir
+          directamente (mesa simple: junto con el de cliente en el efecto de
+          confirmación de venta; mesa compartida: consolidado en
+          `handleOtraOrdenNo`), sin ventana emergente. */}
+
+      {/* Popup del datáfono (BAC Transaction Manager): aprobada/denegada/inválida/
+          error de sistema/rechazo genérico/error de comunicación. Se superpone
+          a cualquier otra pantalla mientras `estado === 'procesando'`. */}
+      {resultadoDatafono && (
+        <DatafonoPopup
+          resultado={resultadoDatafono}
+          onReintentar={handleReintentarDatafono}
+          onCerrar={handleCerrarDatafono}
         />
       )}
     </div>

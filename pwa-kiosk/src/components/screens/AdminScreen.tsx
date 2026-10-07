@@ -7,7 +7,7 @@ import { NOMBRES_IMPRESORA, generarTickets, ticketCierreCaja, type PrinterId, ty
 import TicketPopup from '../ui/TicketPopup'
 import type { Product } from '../../types/catalog'
 import type { VentaEnCola } from '../../types/order'
-import { useLanguage } from '../../context/LanguageContext'
+import { useLanguage } from '../../context/useLanguage'
 
 interface AdminScreenProps {
   onBack: () => void
@@ -537,6 +537,8 @@ function PanelCierreCaja() {
   const [estado, setEstado] = useState<EstadoImpresion>(null)
   const [errorEnvio, setErrorEnvio] = useState<string | null>(null)
   const [vistaPrevia, setVistaPrevia] = useState<TicketLine[] | null>(null)
+  /** `true` mientras se muestra el diálogo de confirmación previo a enviar el cierre (ver hallazgo de auditoría — antes se enviaba con un solo tap, sin confirmar). */
+  const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false)
 
   useEffect(() => {
     obtenerTodasLasVentas().then((todas) => {
@@ -556,7 +558,15 @@ function PanelCierreCaja() {
   // Se imprime en la estación "Cliente" (caja/front), la más lógica para un
   // tiquete de cierre dirigido al cajero, sin necesidad de agregar una
   // estación nueva (ver `PrinterId` en `services/tickets.ts`).
+  //
+  // Guard explícito de reentrada: aunque el botón ya se deshabilita con
+  // `disabled={estado === 'enviando'}`, se repite la misma condición aquí
+  // dentro de la función (ver hallazgo de auditoría) — así, si por lo que
+  // sea esta función se invocara dos veces seguidas (ej. doble tap que
+  // alcanza a disparar ambos `onClick` antes de que React re-renderice el
+  // botón deshabilitado), la segunda llamada no vuelve a mandar el tiquete.
   const imprimirCierre = async () => {
+    if (estado === 'enviando') return
     setEstado('enviando')
     setErrorEnvio(null)
     const ticket = ticketCierreCaja(ventas.map((v) => v.venta))
@@ -567,6 +577,11 @@ function PanelCierreCaja() {
       return
     }
     setEstado(resultado.simulado ? 'simulado' : 'ok')
+  }
+
+  const confirmarCierre = () => {
+    setMostrarConfirmacion(false)
+    imprimirCierre()
   }
 
   return (
@@ -602,7 +617,7 @@ function PanelCierreCaja() {
         </button>
         <button
           type="button"
-          onClick={imprimirCierre}
+          onClick={() => setMostrarConfirmacion(true)}
           disabled={estado === 'enviando' || ventas.length === 0}
           className={`flex-1 rounded-2xl py-4 text-base font-bold text-white transition-transform active:scale-98 disabled:opacity-50 ${
             estado === 'error' ? 'bg-red-700' : 'bg-brand-red'
@@ -625,6 +640,31 @@ function PanelCierreCaja() {
           textoBoton={t('common.cerrar')}
           onCerrar={() => setVistaPrevia(null)}
         />
+      )}
+
+      {mostrarConfirmacion && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl bg-white p-6 text-center shadow-2xl">
+            <h2 className="text-xl font-bold text-wood-900">{t('admin.cierreConfirmarTitulo')}</h2>
+            <p className="text-base text-wood-600">{t('admin.cierreConfirmarMensaje', { total: formatCRC(total) })}</p>
+            <div className="flex w-full flex-col gap-2 pt-1">
+              <button
+                type="button"
+                onClick={confirmarCierre}
+                className="w-full rounded-2xl bg-brand-red py-4 text-base font-bold text-white transition-transform active:scale-98"
+              >
+                {t('admin.cierreConfirmarSi')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMostrarConfirmacion(false)}
+                className="w-full rounded-2xl bg-wood-100 py-4 text-base font-bold text-wood-800 transition-transform active:scale-98"
+              >
+                {t('admin.cierreConfirmarNo')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

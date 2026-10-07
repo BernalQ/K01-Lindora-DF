@@ -15,7 +15,7 @@ import {
 import type { CartLine } from '../../store/cartStore'
 import type { GuarnicionSeleccionada, Product, TerminoCoccion } from '../../types/catalog'
 import { TERMINOS_COCCION } from '../../types/catalog'
-import { useLanguage } from '../../context/LanguageContext'
+import { useLanguage } from '../../context/useLanguage'
 import PrecioConIvi from './PrecioConIvi'
 
 interface PersonalizarModalProps {

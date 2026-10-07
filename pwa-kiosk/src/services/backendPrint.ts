@@ -1,6 +1,7 @@
 import type { PrinterId, TicketLine } from './tickets'
 import { RED_CONFIG } from './redConfig'
 import { construirBufferTicket } from './escpos'
+import { registrarLogImpresion } from './printLogs'
 
 /**
  * Cliente del backend "Backend-Print": reemplaza a `printBridge.ts` (que
@@ -55,18 +56,31 @@ type ResultadoCrudo =
   | { estado: 'ok' }
   | { estado: 'error-backend'; mensaje: string }
   | { estado: 'error-red'; mensaje: string }
+  | { estado: 'tiempo-agotado'; mensaje: string }
+
+/** Tiempo máximo de espera por una respuesta de Backend-Print antes de abortar la petición y reportar `'tiempo-agotado'` (ver `enviarTicket`) — evita que `handleOtraOrdenNo`/el cierre de mesa en `PaymentScreen.tsx` quede colgado indefinidamente si Backend-Print acepta la conexión pero nunca responde. */
+const TIMEOUT_MS = 35_000
 
 /** Única llamada fetch real hacia Backend-Print; `sendPrint` y `enviarTicket` la envuelven con distinta forma de retorno. */
 async function postPrint(printerIP: string, data: DatoImpresion): Promise<ResultadoCrudo> {
+  const controller = new AbortController()
+  const idTimeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
+
   let res: Response
   try {
     res = await fetch(BACKEND_PRINT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ printerIP, data }),
+      signal: controller.signal,
     })
   } catch (err) {
+    if ((err as Error).name === 'AbortError') {
+      return { estado: 'tiempo-agotado', mensaje: `Backend-Print no respondió en ${TIMEOUT_MS / 1000}s` }
+    }
     return { estado: 'error-red', mensaje: (err as Error).message }
+  } finally {
+    clearTimeout(idTimeout)
   }
 
   if (!res.ok) {
@@ -134,25 +148,48 @@ export interface ResultadoImpresion {
  *    (apagada, sin red, IP mal configurada): fallo real de hardware, se
  *    devuelve `ok: false, simulado: false` con el mensaje de error, para que
  *    el panel administrativo lo muestre como error real (ver `AdminScreen.tsx`).
+ * 3. Backend-Print no respondió dentro de `TIMEOUT_MS` (ver `postPrint`):
+ *    tratado igual que un error real (`ok: false, simulado: false`), NO como
+ *    el caso simulado de desarrollo — a diferencia de una conexión
+ *    rechazada (Backend-Print apagado, detectable al instante), un timeout
+ *    normalmente significa que Backend-Print sí está corriendo pero algo se
+ *    colgó (impresora ocupada, cable de red con problemas intermitentes,
+ *    etc.), así que no debe enmascararse como "modo desarrollo sin
+ *    servicio".
+ *
+ * Todos los desenlaces (éxito, simulado, error real) se registran además con
+ * `registrarLogImpresion` (ver `services/printLogs.ts`), incluyendo los
+ * `simulado: true`, para tener visibilidad histórica de cuándo estuvo caído
+ * Backend-Print — antes esos casos sólo quedaban en un `console.log` suelto.
  */
 export async function enviarTicket(printer: PrinterId, lines: TicketLine[]): Promise<ResultadoImpresion> {
   const printerIP = IP_POR_IMPRESORA[printer]
   const bytesEscPos = await construirBufferTicket(lines, { incluirLogo: printer === 'cliente' })
   const data = aBufferJson(bytesEscPos)
+  registrarLogImpresion(printer, 'request', { printerIP, bytes: bytesEscPos.length })
   const resultado = await postPrint(printerIP, data)
 
   if (resultado.estado === 'error-red') {
     console.log(
       `[MOCK] Ticket "${printer}" (Backend-Print no disponible en ${BACKEND_PRINT_URL}): ${bytesEscPos.length} bytes ESC/POS generados pero no enviados`,
     )
+    registrarLogImpresion(printer, 'response', { estado: 'simulado', mensaje: resultado.mensaje })
     return { printer, ok: true, simulado: true, error: resultado.mensaje }
   }
 
   if (resultado.estado === 'error-backend') {
     console.error(`[Backend-Print] Error real de impresora "${printer}" (${printerIP}): ${resultado.mensaje}`)
+    registrarLogImpresion(printer, 'response', { estado: 'error-backend', mensaje: resultado.mensaje })
+    return { printer, ok: false, simulado: false, error: resultado.mensaje }
+  }
+
+  if (resultado.estado === 'tiempo-agotado') {
+    console.error(`[Backend-Print] Tiempo agotado al imprimir en "${printer}" (${printerIP}): ${resultado.mensaje}`)
+    registrarLogImpresion(printer, 'response', { estado: 'tiempo-agotado', mensaje: resultado.mensaje })
     return { printer, ok: false, simulado: false, error: resultado.mensaje }
   }
 
   console.log(`[Backend-Print] Ticket enviado a ${printer} (${printerIP}, ${bytesEscPos.length} bytes ESC/POS)`)
+  registrarLogImpresion(printer, 'response', { estado: 'ok' })
   return { printer, ok: true, simulado: false }
 }

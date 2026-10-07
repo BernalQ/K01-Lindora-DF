@@ -13,7 +13,9 @@
  *
  * Gateway: sí se usa directamente desde la PWA, como host de los envíos de
  * JSON hacia servicios externos (ver `WSDF_CONFIG.endpoint` en `wsdf.ts`
- * para Codisa, y `services/awsIot.ts` para AWS IoT Core).
+ * para Codisa, `services/awsIot.ts` para AWS IoT Core, y
+ * `DATAFONO_CONFIG.endpoint` en `services/datafono.ts` para el datáfono BAC
+ * -- Transaction Manager -- puerto 2493).
  *
  * Subred: 10.0.5.0/24 (máscara 255.255.255.0) — informativo, no lo usa
  * ningún código: ni el `fetch` del navegador ni el `connect()` TCP del

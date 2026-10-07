@@ -219,6 +219,20 @@ function partirEnLineas(texto: string, ancho: number = ANCHO): string[] {
 }
 
 /**
+ * Formatea un monto para el comprobante del cliente SIN el símbolo ₡ (a
+ * diferencia de `formatCRC`, usado en el resto de la interfaz y en el
+ * tiquete de cierre de caja): sólo el número con dos decimales fijos (ej.
+ * `2000.00`), sin separador de miles. El comprobante impreso al comensal no
+ * debe depender del símbolo ₡ (que en ESC/POS se rasteriza como imagen, ver
+ * `generarRasterSimboloColon` en `services/escpos.ts`) ni de un formato con
+ * coma de miles — sólo el valor numérico plano, igual en toda línea con
+ * precio del ticket de cliente (items y total).
+ */
+function formatMontoTicketCliente(monto: number): string {
+  return monto.toFixed(2)
+}
+
+/**
  * Texto del monto TOTAL listo para imprimir en el comprobante del cliente,
  * con la leyenda "I.V.I." (Impuesto de Ventas Incluido) pegada al monto,
  * para dejar explícito en el tiquete impreso que el impuesto de venta ya
@@ -226,9 +240,13 @@ function partirEnLineas(texto: string, ancho: number = ANCHO): string[] {
  * `PaymentScreen`; este helper sólo agrega la leyenda visible al imprimir).
  * Usado únicamente en la línea "TOTAL PAGADO:" — los montos de cada item
  * individual del comprobante no llevan esta leyenda (ver `ticketCliente`).
+ * Usa `formatMontoTicketCliente` (sin símbolo ₡, ver ese helper) en vez de
+ * `formatCRC`, que sigue usándose en el resto de la interfaz y en el
+ * tiquete de cierre de caja (`ticketCierreCaja`), no afectado por este
+ * requerimiento.
  */
 function montoTotalConIvi(monto: number): string {
-  return `${formatCRC(monto)} I.V.I.`
+  return `${formatMontoTicketCliente(monto)} I.V.I.`
 }
 
 /**
@@ -490,7 +508,10 @@ export function ticketCliente(venta: Venta): TicketLine[] {
   const lineas: TicketLine[] = [...encabezadoCliente(venta)]
   for (const item of venta.items) {
     lineas.push(
-      ...agregarItem(`${item.quantity}x ${nombreConVariante(item)}`, formatCRC(item.price * item.quantity)),
+      ...agregarItem(
+        `${item.quantity}x ${nombreConVariante(item)}`,
+        formatMontoTicketCliente(item.price * item.quantity),
+      ),
     )
     if (item.corte) lineas.push(...agregarItem(`  Corte: ${item.corte}`))
     const termino = terminoTexto(item)

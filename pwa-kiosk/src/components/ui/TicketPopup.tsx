@@ -1,4 +1,6 @@
 import type { TicketLine } from '../../services/tickets'
+import type { ResultadoImpresion } from '../../services/backendPrint'
+import { useLanguage } from '../../context/useLanguage'
 
 export interface TicketPopupSeccion {
   /** Título de la sub-sección (ej. nombre de la impresora destino). */
@@ -11,6 +13,17 @@ interface TicketPopupProps {
   secciones: TicketPopupSeccion[]
   textoBoton: string
   onCerrar: () => void
+  /**
+   * Resultado real de `enviarTicket` para el tiquete mostrado en este
+   * pop-up (ej. el comprobante del comensal, ver `PaymentScreen.tsx`).
+   * `undefined`/`null` significa que todavía no se conoce el resultado (se
+   * oculta el indicador); antes este pop-up siempre asumía que la
+   * impresión había funcionado, sin reflejar fallos reales (ver hallazgo de
+   * auditoría).
+   */
+  estadoImpresion?: ResultadoImpresion | null
+  /** Sólo se llama si `estadoImpresion?.ok === false` y esta prop está presente (el botón de reintentar no se renderiza si no aplica). */
+  onReintentarImpresion?: () => void
 }
 
 function claseLinea(linea: TicketLine): string {
@@ -33,13 +46,43 @@ function textoLinea(linea: TicketLine): string {
  * para el comprobante del comensal como para el tiquete de
  * carnicería/restaurante (por orden individual o consolidado de mesa).
  */
-export default function TicketPopup({ titulo, secciones, textoBoton, onCerrar }: TicketPopupProps) {
+export default function TicketPopup({
+  titulo,
+  secciones,
+  textoBoton,
+  onCerrar,
+  estadoImpresion,
+  onReintentarImpresion,
+}: TicketPopupProps) {
+  const { t } = useLanguage()
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="shrink-0 bg-wood-950 px-5 py-4">
           <h2 className="text-lg font-bold text-cream-50">{titulo}</h2>
         </div>
+        {estadoImpresion && (
+          <div
+            className={`flex shrink-0 items-center justify-between gap-3 px-5 py-2 text-xs font-bold ${
+              estadoImpresion.ok && !estadoImpresion.simulado
+                ? 'bg-green-50 text-green-700'
+                : estadoImpresion.ok
+                  ? 'bg-amber-50 text-amber-700'
+                  : 'bg-red-50 text-red-700'
+            }`}
+          >
+            <span>
+              {estadoImpresion.ok && !estadoImpresion.simulado && `✔ ${t('payment.impresoOk')}`}
+              {estadoImpresion.ok && estadoImpresion.simulado && `⚠ ${t('payment.impresoSimulado')}`}
+              {!estadoImpresion.ok && `✖ ${t('payment.impresoError')}`}
+            </span>
+            {!estadoImpresion.ok && onReintentarImpresion && (
+              <button type="button" onClick={onReintentarImpresion} className="shrink-0 underline">
+                {t('payment.reintentar')}
+              </button>
+            )}
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto p-5">
           <div className="flex flex-col gap-4">
             {secciones.map((seccion, i) => (

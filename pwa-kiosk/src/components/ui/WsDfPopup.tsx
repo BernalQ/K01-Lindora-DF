@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { formatCRC, nombreParaCodigoCodisa } from '../../data/catalog'
-import { useLanguage } from '../../context/LanguageContext'
+import { useLanguage } from '../../context/useLanguage'
 import type { Venta } from '../../types/order'
 import type { ValidacionWsDf, WsDfPayload } from '../../types/wsdf'
 
@@ -9,19 +10,35 @@ interface WsDfPopupProps {
   validacion: ValidacionWsDf
   onConfirmar: () => void
   onCancelar: () => void
+  /** `true` mientras `enviarPedidoWsDf` está en vuelo (ver `PaymentScreen`): deshabilita ambos botones y cambia el texto de "Confirmar envío". */
+  enviando?: boolean
 }
 
 /**
- * Pop-up de verificación previo a la integración real con el API WS DF de
- * Codisa: muestra, de forma legible, los datos que se enviarían al
- * confirmar el pago (ver `services/wsdf.ts`), junto con el JSON crudo
- * completo. En esta fase el botón "Confirmar envío" sólo registra un stub
- * local (`enviarPedidoWsDf`) — el envío real al endpoint todavía no está
- * activo.
+ * Pop-up de verificación previo al envío real a Codisa (`?action=orden`,
+ * ver `services/wsdf.ts`): muestra, de forma legible, los datos que se
+ * enviarían al confirmar el pago, junto con el JSON crudo completo. Al
+ * presionar "Confirmar envío" se dispara el POST real; mientras está en
+ * vuelo (`enviando`) este mismo pop-up permanece abierto con los botones
+ * deshabilitados, y el resultado final se muestra en `CodisaOrdenPopup`.
  */
-export default function WsDfPopup({ venta, payload, validacion, onConfirmar, onCancelar }: WsDfPopupProps) {
+export default function WsDfPopup({ venta, payload, validacion, onConfirmar, onCancelar, enviando }: WsDfPopupProps) {
   const { language, t } = useLanguage()
   const { pedido } = payload
+  // "Cancelar" en una venta con factura electrónica (`fe === '1'`) significa
+  // que el pedido NUNCA se transmite a Codisa — a diferencia de una venta
+  // simple, donde cancelar este pop-up no tiene ese efecto. Antes el botón
+  // cancelaba de inmediato sin avisar (ver hallazgo de auditoría); ahora se
+  // pide una confirmación explícita sólo en ese caso.
+  const [confirmandoCancelar, setConfirmandoCancelar] = useState(false)
+
+  const handleClickCancelar = () => {
+    if (pedido.fe === '1') {
+      setConfirmandoCancelar(true)
+      return
+    }
+    onCancelar()
+  }
 
   const fechaTexto = new Date(venta.fechaHora).toLocaleString('es-CR', {
     dateStyle: 'short',
@@ -115,27 +132,49 @@ export default function WsDfPopup({ venta, payload, validacion, onConfirmar, onC
                 {JSON.stringify(payload, null, 2)}
               </pre>
             </details>
-
-            <p className="text-center text-xs text-wood-400">{t('wsdf.envioPendienteNota')}</p>
           </div>
         </div>
 
-        <div className="flex shrink-0 gap-3 border-t border-wood-100 p-5">
-          <button
-            type="button"
-            onClick={onCancelar}
-            className="flex-1 rounded-2xl bg-wood-100 py-4 text-base font-bold text-wood-800 transition-transform active:scale-98"
-          >
-            {t('wsdf.cancelar')}
-          </button>
-          <button
-            type="button"
-            onClick={onConfirmar}
-            className="flex-1 rounded-2xl bg-brand-red py-4 text-base font-bold text-white transition-transform active:scale-98"
-          >
-            {t('wsdf.confirmarEnvio')}
-          </button>
-        </div>
+        {confirmandoCancelar ? (
+          <div className="flex shrink-0 flex-col gap-3 border-t border-wood-100 p-5">
+            <p className="text-center text-sm font-semibold text-amber-700">{t('wsdf.confirmarCancelarMensaje')}</p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmandoCancelar(false)}
+                className="flex-1 rounded-2xl bg-wood-100 py-4 text-base font-bold text-wood-800 transition-transform active:scale-98"
+              >
+                {t('wsdf.confirmarCancelarNo')}
+              </button>
+              <button
+                type="button"
+                onClick={onCancelar}
+                className="flex-1 rounded-2xl bg-brand-red py-4 text-base font-bold text-white transition-transform active:scale-98"
+              >
+                {t('wsdf.confirmarCancelarSi')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex shrink-0 gap-3 border-t border-wood-100 p-5">
+            <button
+              type="button"
+              onClick={handleClickCancelar}
+              disabled={enviando}
+              className="flex-1 rounded-2xl bg-wood-100 py-4 text-base font-bold text-wood-800 transition-transform active:scale-98 disabled:opacity-50"
+            >
+              {t('wsdf.cancelar')}
+            </button>
+            <button
+              type="button"
+              onClick={onConfirmar}
+              disabled={enviando}
+              className="flex-1 rounded-2xl bg-brand-red py-4 text-base font-bold text-white transition-transform active:scale-98 disabled:opacity-50"
+            >
+              {enviando ? t('wsdf.enviando') : t('wsdf.confirmarEnvio')}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

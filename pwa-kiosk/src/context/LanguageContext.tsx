@@ -1,16 +1,15 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Language } from '../types/catalog'
-import { translate, terminoLabel, type TranslationKey } from '../i18n/translations'
+import { translate, terminoLabel } from '../i18n/translations'
+import { LanguageContext, type LanguageContextValue } from './languageContextBase'
 
-interface LanguageContextValue {
-  language: Language
-  setLanguage: (language: Language) => void
-  t: (key: TranslationKey, vars?: Record<string, string | number>) => string
-  terminoLabel: (termino: string) => string
-}
-
-const LanguageContext = createContext<LanguageContextValue | null>(null)
-
+/**
+ * Este archivo exporta ÚNICAMENTE el componente `LanguageProvider` (ver
+ * `useLanguage.ts` para el hook y `languageContextBase.ts` para la instancia
+ * del contexto) — así cumple con la regla de oxlint
+ * `react(only-export-components)`, necesaria para que React Fast Refresh
+ * pueda actualizar este componente en caliente sin recargar toda la página.
+ */
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState<Language>('es')
 
@@ -31,19 +30,4 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   )
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>
-}
-
-export function useLanguage(): LanguageContextValue {
-  const ctx = useContext(LanguageContext)
-  if (!ctx) {
-    // Fallback seguro: si algún componente se renderiza fuera del provider,
-    // no rompemos la app, simplemente usamos español por defecto.
-    return {
-      language: 'es',
-      setLanguage: () => {},
-      t: (key, vars) => translate('es', key, vars),
-      terminoLabel: (termino) => terminoLabel(termino, 'es'),
-    }
-  }
-  return ctx
 }

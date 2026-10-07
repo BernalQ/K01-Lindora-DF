@@ -101,6 +101,15 @@ const dictionaries = {
     'payment.reintentar': 'Reintentar',
     'payment.continuarSinFactura': 'Continuar sin factura',
 
+    'payment.impresionFallidaBanner': 'No se pudo imprimir en {{impresora}}',
+    'payment.impresionCierreErrorTitulo': 'Error de impresión al cerrar mesa',
+    'payment.impresionCierreErrorMensaje': 'No se pudo imprimir el tiquete consolidado en: {{impresoras}}. Puede reintentar o continuar sin imprimir (el pedido ya quedó registrado).',
+    'payment.continuarSinImprimir': 'Continuar sin imprimir',
+    'payment.impresoOk': 'Impreso',
+    'payment.impresoSimulado': 'Simulado (sin impresora conectada)',
+    'payment.impresoError': 'No se pudo imprimir',
+    'payment.reintentando': 'Reintentando…',
+
     'cedula.title': 'Identificación del cliente',
     'cedula.subtitle': 'Ingrese su cédula para generar la factura electrónica.',
     'cedula.label': 'Cédula',
@@ -108,6 +117,9 @@ const dictionaries = {
     'cedula.buscar': 'Buscar',
     'cedula.buscando': 'Buscando…',
     'cedula.backToPayment': 'Volver al pago',
+    'cedula.errorInvalidaTitulo': 'Cédula inválida',
+    'cedula.errorConexionTitulo': 'Error de conexión',
+    'cedula.continuarRegistroManual': 'Continuar con registro manual',
 
     'registro.title': 'Registro de cliente',
     'registro.subtitle': 'No encontramos la cédula {{cedula}}. Complete sus datos para la factura.',
@@ -118,6 +130,8 @@ const dictionaries = {
     'registro.guardar': 'Guardar y continuar',
     'registro.guardando': 'Guardando…',
     'registro.avisoSinConexion': 'No se pudo guardar en la base local; se continuará de todas formas.',
+    'registro.correoInvalido': 'El correo electrónico no tiene un formato válido.',
+    'registro.telefonoInvalido': 'El teléfono no tiene un formato válido.',
 
     'confirmation.orderConfirmed': '¡Pedido confirmado!',
     'confirmation.tableTotal': 'Mesa {{mesa}} · {{total}}',
@@ -187,6 +201,10 @@ const dictionaries = {
     'admin.cierreTotal': 'Total del día',
     'admin.cierreVistaPrevia': 'Vista previa',
     'admin.cierreImprimir': 'Generar e imprimir cierre',
+    'admin.cierreConfirmarTitulo': '¿Confirmar cierre de caja?',
+    'admin.cierreConfirmarMensaje': 'Se enviará el tiquete de cierre por {{total}}. Esta acción no se puede deshacer.',
+    'admin.cierreConfirmarSi': 'Sí, generar cierre',
+    'admin.cierreConfirmarNo': 'Cancelar',
 
     'mesaSetup.pregunta': 'La misma mesa va a tener diferentes ordenes pagadas por separado?',
     'mesaSetup.si': 'Sí',
@@ -198,8 +216,8 @@ const dictionaries = {
     'mesaSetup.continuar': 'Continuar',
     'mesaSetup.cancelar': 'Cancelar',
 
-    'wsdf.title': 'Envío a WS DF (Codisa)',
-    'wsdf.subtitle': 'Datos que se enviarían al confirmar la integración. Por ahora sólo se muestran, no se envían.',
+    'wsdf.title': 'Envío a Codisa (factura electrónica)',
+    'wsdf.subtitle': 'Verifique los datos antes de enviarlos a Codisa.',
     'wsdf.idPedido': 'ID Pedido',
     'wsdf.idTienda': 'ID Tienda',
     'wsdf.cliente': 'Cliente',
@@ -215,8 +233,35 @@ const dictionaries = {
     'wsdf.erroresTitle': 'Validación con advertencias:',
     'wsdf.cancelar': 'Cancelar',
     'wsdf.confirmarEnvio': 'Confirmar envío',
-    'wsdf.envioPendienteNota':
-      'El envío real al API WS DF aún no está activo; este pop-up es sólo de verificación.',
+    'wsdf.enviando': 'Enviando…',
+    'wsdf.confirmarCancelarMensaje': 'Si cancela, la factura electrónica no se transmitirá a Codisa. ¿Desea continuar?',
+    'wsdf.confirmarCancelarSi': 'Sí, cancelar',
+    'wsdf.confirmarCancelarNo': 'No, volver',
+
+    'datafono.tituloAprobada': 'Transacción exitosa',
+    'datafono.tituloDenegada': 'Transacción denegada',
+    'datafono.tituloInvalida': 'Transacción inválida',
+    'datafono.tituloErrorSistema': 'Error de sistema',
+    'datafono.tituloRechazoGenerico': 'Transacción rechazada',
+    'datafono.tituloErrorHttp': 'Error de comunicación con el datáfono',
+    'datafono.tituloErrorRed': 'No se pudo contactar el datáfono',
+    'datafono.tituloEnCurso': 'Transacción en curso',
+    'datafono.tituloTiempoAgotado': 'Tiempo de espera agotado',
+    'datafono.tituloMontoInvalido': 'Monto inválido',
+    'datafono.autorizacion': 'Autorización',
+    'datafono.referencia': 'Referencia',
+    'datafono.confirmarReintentoTimeoutMensaje':
+      'Antes de reintentar, revise el datáfono físico: si ya mostró "Aprobada" o imprimió un comprobante, NO reintente — podría cobrarse dos veces. Reintente sólo si el datáfono no completó la transacción.',
+    'datafono.confirmarReintentoTimeoutSi': 'Ya verifiqué, reintentar',
+    'datafono.confirmarReintentoTimeoutNo': 'Volver',
+
+    'codisaOrden.tituloEnviado': 'Pedido enviado correctamente ✔',
+    'codisaOrden.tituloRechazado': 'Codisa rechazó el pedido ✖',
+    'codisaOrden.tituloErrorValidacion': 'Error en los datos del pedido ✖',
+    'codisaOrden.tituloErrorHttp': 'Error de comunicación con Codisa ✖',
+    'codisaOrden.tituloErrorRed': 'No se pudo contactar a Codisa ✖',
+    'codisaOrden.tituloEnCurso': 'Envío a Codisa en curso',
+    'codisaOrden.tituloTiempoAgotado': 'Tiempo de espera agotado al enviar a Codisa',
   },
   en: {
     'welcome.tapToStart': 'Tap to start',
@@ -311,6 +356,15 @@ const dictionaries = {
     'payment.reintentar': 'Retry',
     'payment.continuarSinFactura': 'Continue without invoice',
 
+    'payment.impresionFallidaBanner': 'Could not print at {{impresora}}',
+    'payment.impresionCierreErrorTitulo': 'Printing error while closing table',
+    'payment.impresionCierreErrorMensaje': 'Could not print the consolidated ticket at: {{impresoras}}. You can retry or continue without printing (the order was already recorded).',
+    'payment.continuarSinImprimir': 'Continue without printing',
+    'payment.impresoOk': 'Printed',
+    'payment.impresoSimulado': 'Simulated (no printer connected)',
+    'payment.impresoError': 'Could not print',
+    'payment.reintentando': 'Retrying…',
+
     'cedula.title': 'Customer identification',
     'cedula.subtitle': 'Enter your ID number to generate the electronic invoice.',
     'cedula.label': 'ID number',
@@ -318,6 +372,9 @@ const dictionaries = {
     'cedula.buscar': 'Search',
     'cedula.buscando': 'Searching…',
     'cedula.backToPayment': 'Back to payment',
+    'cedula.errorInvalidaTitulo': 'Invalid ID number',
+    'cedula.errorConexionTitulo': 'Connection error',
+    'cedula.continuarRegistroManual': 'Continue with manual registration',
 
     'registro.title': 'Customer registration',
     'registro.subtitle': "We couldn't find ID {{cedula}}. Please fill in your details for the invoice.",
@@ -328,6 +385,8 @@ const dictionaries = {
     'registro.guardar': 'Save and continue',
     'registro.guardando': 'Saving…',
     'registro.avisoSinConexion': 'Could not save to the local database; continuing anyway.',
+    'registro.correoInvalido': 'The email address format is invalid.',
+    'registro.telefonoInvalido': 'The phone number format is invalid.',
 
     'confirmation.orderConfirmed': 'Order confirmed!',
     'confirmation.tableTotal': 'Table {{mesa}} · {{total}}',
@@ -397,6 +456,10 @@ const dictionaries = {
     'admin.cierreTotal': "Day's total",
     'admin.cierreVistaPrevia': 'Preview',
     'admin.cierreImprimir': 'Generate and print closing',
+    'admin.cierreConfirmarTitulo': 'Confirm cash register closing?',
+    'admin.cierreConfirmarMensaje': 'The closing ticket for {{total}} will be sent. This action cannot be undone.',
+    'admin.cierreConfirmarSi': 'Yes, generate closing',
+    'admin.cierreConfirmarNo': 'Cancel',
 
     'mesaSetup.pregunta': 'The same table will have different orders paid separately?',
     'mesaSetup.si': 'Yes',
@@ -408,8 +471,8 @@ const dictionaries = {
     'mesaSetup.continuar': 'Continue',
     'mesaSetup.cancelar': 'Cancel',
 
-    'wsdf.title': 'Sending to WS DF (Codisa)',
-    'wsdf.subtitle': 'Data that would be sent once the integration is confirmed. For now it is only shown, not sent.',
+    'wsdf.title': 'Sending to Codisa (electronic invoice)',
+    'wsdf.subtitle': 'Review the data before sending it to Codisa.',
     'wsdf.idPedido': 'Order ID',
     'wsdf.idTienda': 'Store ID',
     'wsdf.cliente': 'Customer',
@@ -425,10 +488,59 @@ const dictionaries = {
     'wsdf.erroresTitle': 'Validation warnings:',
     'wsdf.cancelar': 'Cancel',
     'wsdf.confirmarEnvio': 'Confirm send',
-    'wsdf.envioPendienteNota':
-      'Actual sending to the WS DF API is not active yet; this pop-up is for verification only.',
+    'wsdf.enviando': 'Sending…',
+    'wsdf.confirmarCancelarMensaje': 'If you cancel, the electronic invoice will not be sent to Codisa. Do you want to continue?',
+    'wsdf.confirmarCancelarSi': 'Yes, cancel',
+    'wsdf.confirmarCancelarNo': 'No, go back',
+
+    'datafono.tituloAprobada': 'Successful transaction',
+    'datafono.tituloDenegada': 'Transaction denied',
+    'datafono.tituloInvalida': 'Invalid transaction',
+    'datafono.tituloErrorSistema': 'System error',
+    'datafono.tituloRechazoGenerico': 'Transaction rejected',
+    'datafono.tituloErrorHttp': 'Card reader communication error',
+    'datafono.tituloErrorRed': 'Could not reach the card reader',
+    'datafono.tituloEnCurso': 'Transaction in progress',
+    'datafono.tituloTiempoAgotado': 'Request timed out',
+    'datafono.tituloMontoInvalido': 'Invalid amount',
+    'datafono.autorizacion': 'Authorization',
+    'datafono.referencia': 'Reference',
+    'datafono.confirmarReintentoTimeoutMensaje':
+      'Before retrying, check the physical card reader: if it already showed "Approved" or printed a receipt, do NOT retry — it could be charged twice. Only retry if the card reader did not complete the transaction.',
+    'datafono.confirmarReintentoTimeoutSi': 'I checked, retry',
+    'datafono.confirmarReintentoTimeoutNo': 'Go back',
+
+    'codisaOrden.tituloEnviado': 'Order sent successfully ✔',
+    'codisaOrden.tituloRechazado': 'Codisa rejected the order ✖',
+    'codisaOrden.tituloErrorValidacion': 'Error in order data ✖',
+    'codisaOrden.tituloErrorHttp': 'Communication error with Codisa ✖',
+    'codisaOrden.tituloErrorRed': 'Could not reach Codisa ✖',
+    'codisaOrden.tituloEnCurso': 'Codisa submission in progress',
+    'codisaOrden.tituloTiempoAgotado': 'Request to Codisa timed out',
   },
 } as const
+
+/**
+ * Verificación de paridad en tiempo de compilación entre ambos diccionarios
+ * (ver hallazgo de auditoría: antes nada impedía que `es`/`en` quedaran
+ * desincronizados — ej. agregar una clave sólo a `es` y olvidarla en `en`,
+ * lo que `translate()` disimularía en runtime cayendo de vuelta a
+ * `dictionaries.es[key]`, ocultando el olvido en vez de fallar el build).
+ *
+ * `satisfies Record<Claves..., string>` obliga a que CADA diccionario tenga,
+ * como mínimo, todas las claves del otro (con valor `string`) — si falta
+ * una, TypeScript marca error aquí mismo, señalando exactamente qué
+ * diccionario quedó incompleto, sin necesidad de un test aparte ni de
+ * ejecutar nada en runtime.
+ */
+type ClavesEs = keyof (typeof dictionaries)['es']
+type ClavesEn = keyof (typeof dictionaries)['en']
+// `void (... satisfies ...)` en vez de una expresión suelta: evita que el
+// linter (oxlint) marque esto como "expresión sin usar", ya que el único
+// propósito de esta línea es la verificación de tipos en tiempo de
+// compilación, no producir ningún valor en runtime.
+void (dictionaries.en satisfies Record<ClavesEs, string>)
+void (dictionaries.es satisfies Record<ClavesEn, string>)
 
 export type TranslationKey = keyof (typeof dictionaries)['es']
 

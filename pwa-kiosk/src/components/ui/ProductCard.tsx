@@ -1,7 +1,7 @@
 import { productDisplayDescription, productDisplayName, productDisplayTitle, productImage } from '../../data/catalog'
 import { useCartStore } from '../../store/cartStore'
 import type { Product } from '../../types/catalog'
-import { useLanguage } from '../../context/LanguageContext'
+import { useLanguage } from '../../context/useLanguage'
 import PrecioConIvi from './PrecioConIvi'
 import ProductImage from './ProductImage'
 
