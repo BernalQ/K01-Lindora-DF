@@ -486,8 +486,11 @@ export default function PaymentScreen({
   // constancia en consola (el request/response ya quedan en el log de
   // Codisa vía `registrarLogCodisa`, dentro de `enviarPedidoWsDf`). El
   // pop-up `WsDfPopup` se vuelve puramente informativo en este modo (ver
-  // prop `automatico`) y, tras una pausa para que el operador pueda leer el
-  // endpoint/JSON, el flujo avanza solo al comprobante del comensal.
+  // prop `automatico`) — a propósito NO se agenda ningún `setTimeout` para
+  // avanzar `paso` desde aquí: el pop-up se queda abierto hasta que el
+  // operador presiona "Cerrar" (que ya llama a `handleCancelarWsDf`, el
+  // mismo `onCancelar` de siempre, y ese sí hace `setPaso('popupCliente')`),
+  // para poder leer con calma el endpoint/JSON ya enviado antes de seguir.
   useEffect(() => {
     if (paso !== 'popupWsDf' || !wsdfPayload || resultadoOrdenCodisa) return
     if (!ventaSimuladaRef.current || codisaAutoDisparadoRef.current) return
@@ -495,8 +498,6 @@ export default function PaymentScreen({
     enviarPedidoWsDf(wsdfPayload)
       .then((resultado) => console.log('[PaymentScreen] (modo prueba) Codisa respondió:', resultado))
       .catch((err) => console.error('[PaymentScreen] (modo prueba) Error inesperado enviando a Codisa:', err))
-    const id = setTimeout(() => setPaso('popupCliente'), 3000)
-    return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paso, wsdfPayload, resultadoOrdenCodisa])
 

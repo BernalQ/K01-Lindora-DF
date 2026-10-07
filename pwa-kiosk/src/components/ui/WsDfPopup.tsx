@@ -19,7 +19,11 @@ interface WsDfPopupProps {
    * sin esperar a que el operador confirme ni a que Codisa responda — este
    * pop-up pasa a ser puramente informativo (endpoint + JSON) y se oculta
    * la fila de botones "Cancelar"/"Confirmar envío", que no aplican porque
-   * ya no hay nada que confirmar ni cancelar.
+   * ya no hay nada que confirmar ni cancelar. A diferencia del resto del
+   * auto-pilot, este pop-up NO se cierra sólo con un timeout: muestra un
+   * botón "Cerrar" (que reutiliza `onCancelar`, sin el aviso de factura
+   * electrónica — aquí no hay nada que cancelar de verdad) para que el
+   * operador pueda leer con calma el endpoint/JSON antes de continuar.
    */
   automatico?: boolean
 }
@@ -162,11 +166,27 @@ export default function WsDfPopup({
         </div>
 
         {automatico ? (
-          <div className="flex shrink-0 flex-col gap-1 border-t border-wood-100 bg-amber-50 p-4 text-center">
-            <p className="text-xs font-bold uppercase tracking-wide text-amber-800">
-              {t('datafono.modoPrueba')}
-            </p>
-            <p className="text-xs text-amber-700">{t('wsdf.enviandoAutomatico')}</p>
+          <div className="flex shrink-0 flex-col gap-3 border-t border-wood-100 bg-amber-50 p-4 text-center">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-amber-800">
+                {t('datafono.modoPrueba')}
+              </p>
+              <p className="text-xs text-amber-700">{t('wsdf.enviandoAutomatico')}</p>
+            </div>
+            {/* A diferencia del resto del auto-pilot (cierre del pop-up de
+                datáfono y retorno a inicio, que sí avanzan solos), este
+                pop-up NO se cierra con un timeout: el operador en pruebas
+                necesita poder leer con calma el endpoint/JSON ya enviado a
+                Codisa antes de continuar — por eso requiere este clic
+                explícito (ver `PaymentScreen`, que ya no agenda ningún
+                `setTimeout` para avanzar `paso` desde aquí). */}
+            <button
+              type="button"
+              onClick={onCancelar}
+              className="w-full rounded-2xl bg-wood-800 py-4 text-base font-bold text-white transition-transform active:scale-98"
+            >
+              {t('common.cerrar')}
+            </button>
           </div>
         ) : confirmandoCancelar ? (
           <div className="flex shrink-0 flex-col gap-3 border-t border-wood-100 p-5">
