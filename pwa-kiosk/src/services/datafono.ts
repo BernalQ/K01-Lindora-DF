@@ -223,7 +223,15 @@ export async function enviarTransaccionDatafono(transaccion: TransaccionDatafono
 
   terminalesConTransaccionActiva.add(terminalId)
   try {
-    registrarLogDatafono('request', transaccion)
+    // Se registra el endpoint completo junto con el JSON en cada entrada de
+    // log (request y las 4 ramas de response: timeout, error de red, error
+    // HTTP, éxito) — así, al revisar la bitácora (consola o
+    // `obtenerLogsDatafono`/`localStorage`), queda sin ambigüedad a qué
+    // dirección exacta se mandó cada intento (ver hallazgo de auditoría: la
+    // URL no quedaba registrada, sólo la transacción, dificultando
+    // diagnosticar si el problema era de endpoint o del propio datáfono).
+    registrarLogDatafono('request', { endpoint: DATAFONO_CONFIG.endpoint, ...transaccion })
+    console.log(`[datafono] POST ${DATAFONO_CONFIG.endpoint}`, transaccion)
 
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
@@ -239,11 +247,29 @@ export async function enviarTransaccionDatafono(transaccion: TransaccionDatafono
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
         const mensaje = `El datáfono no respondió dentro de ${TIMEOUT_MS / 1000} segundos (tiempo de espera agotado).`
-        registrarLogDatafono('response', { terminalId, invoice: (transaccion as { invoice?: string }).invoice, error: mensaje })
+        registrarLogDatafono('response', {
+          endpoint: DATAFONO_CONFIG.endpoint,
+          terminalId,
+          invoice: (transaccion as { invoice?: string }).invoice,
+          error: mensaje,
+        })
         return { categoria: 'tiempo-agotado', mensaje, permiteReintentar: true }
       }
-      const mensaje = `No se pudo contactar al datáfono: ${(err as Error).message}`
-      registrarLogDatafono('response', { terminalId, invoice: (transaccion as { invoice?: string }).invoice, error: mensaje })
+      // `TypeError: Failed to fetch` (el error que arroja `fetch` cuando no
+      // hay nada escuchando en esa IP/puerto, ej. conexión rechazada o host
+      // inalcanzable) cae aquí — si el Transaction Manager en realidad
+      // escucha en `localhost`/`127.0.0.1` de este mismo equipo en vez del
+      // gateway de red (`DATAFONO_CONFIG.endpoint`, ver `services/redConfig.ts`),
+      // este es exactamente el síntoma esperado: todo intento cae en
+      // 'error-red' sin llegar nunca a tocar el datáfono real. Por eso se
+      // deja el endpoint completo en el log de este caso en particular.
+      const mensaje = `No se pudo contactar al datáfono en ${DATAFONO_CONFIG.endpoint}: ${(err as Error).message}`
+      registrarLogDatafono('response', {
+        endpoint: DATAFONO_CONFIG.endpoint,
+        terminalId,
+        invoice: (transaccion as { invoice?: string }).invoice,
+        error: mensaje,
+      })
       return {
         categoria: 'error-red',
         mensaje,
@@ -265,6 +291,7 @@ export async function enviarTransaccionDatafono(transaccion: TransaccionDatafono
       const cuerpoError = await res.json().catch(() => undefined)
       const detalle = extraerDetalleHttp(cuerpoError)
       registrarLogDatafono('response', {
+        endpoint: DATAFONO_CONFIG.endpoint,
         terminalId,
         invoice: (transaccion as { invoice?: string }).invoice,
         httpStatus: res.status,
@@ -274,6 +301,11 @@ export async function enviarTransaccionDatafono(transaccion: TransaccionDatafono
         DESCRIPCION_HTTP[res.status] ?? `El datáfono respondió con un error inesperado (HTTP ${res.status}).`
       return {
         categoria: 'error-http',
+        // El detalle (campo inválido/mensaje crudo de Transaction Manager,
+        // ver `extraerDetalleHttp`) SIEMPRE se antepone/anexa al mensaje
+        // genérico cuando viene disponible — es justo lo que necesita el
+        // operador/soporte para saber qué campo del JSON rechazó el
+        // datáfono en un 400 Bad Request (ver hallazgo de auditoría).
         mensaje: detalle ? `${mensajeBase} (${detalle})` : mensajeBase,
         // 400/404 son errores de la petición misma (no se arreglan reintentando
         // igual); 429/500/503 sí son transitorios.
@@ -283,6 +315,7 @@ export async function enviarTransaccionDatafono(transaccion: TransaccionDatafono
 
     const body: RespuestaDatafonoBody = await res.json().catch(() => ({ responseCode: '' }))
     registrarLogDatafono('response', {
+      endpoint: DATAFONO_CONFIG.endpoint,
       terminalId,
       invoice: (transaccion as { invoice?: string }).invoice,
       body,
