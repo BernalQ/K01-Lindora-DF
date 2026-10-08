@@ -96,6 +96,4 @@ export interface ResultadoDatafono {
   responseCode?: string
   authorizationNumber?: string
   referenceNumber?: string
-  /** `true` sólo cuando este resultado vino del modo de simulación de pruebas (ver `SIMULACION_DATAFONO_ACTIVA` en `services/datafono.ts`), nunca en una transacción real — usado por `DatafonoPopup` para mostrar un aviso visual y no confundirlo con un cobro real. */
-  simulado?: boolean
 }

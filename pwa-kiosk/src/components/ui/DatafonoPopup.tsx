@@ -136,12 +136,6 @@ export default function DatafonoPopup({ resultado, onReintentar, onCerrar }: Dat
           )}
         </div>
 
-        {resultado.simulado && (
-          <p className="w-full rounded-xl bg-amber-100 px-3 py-2 text-center text-xs font-bold uppercase tracking-wide text-amber-800">
-            {t('datafono.modoPrueba')}
-          </p>
-        )}
-
         <h2 className="text-xl font-bold text-wood-900">{t(apariencia.tituloKey)}</h2>
         <p className="text-base text-wood-600">{resultado.mensaje}</p>
 

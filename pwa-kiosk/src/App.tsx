@@ -28,20 +28,7 @@ function App() {
     setScreen('payment')
   }
 
-  /**
-   * En modo DEV (ver `import.meta.env.DEV` — eliminado por completo en el
-   * build de producción) se salta `CedulaScreen` por completo: no se hace
-   * ninguna búsqueda previa en Codisa, se va directo al registro manual
-   * (`RegistroClienteScreen`), que en DEV también permite teclear la cédula
-   * a mano (ver prop `permitirEditarCedula` ahí). Fuera de DEV el flujo
-   * real de búsqueda por cédula queda exactamente igual que siempre.
-   */
   const handleSolicitarFactura = () => {
-    if (import.meta.env.DEV) {
-      setCedulaPendiente('')
-      setScreen('registroCliente')
-      return
-    }
     setScreen('cedula')
   }
 
@@ -106,11 +93,7 @@ function App() {
     return (
       <RegistroClienteScreen
         cedula={cedulaPendiente}
-        // En DEV se llegó aquí directo desde PaymentScreen (sin pasar por
-        // CedulaScreen, ver `handleSolicitarFactura`), así que "volver"
-        // debe ir a 'payment' y no a una pantalla de cédula que nunca se
-        // mostró.
-        onBack={() => setScreen(import.meta.env.DEV ? 'payment' : 'cedula')}
+        onBack={() => setScreen('cedula')}
         onGuardado={handleRegistroGuardado}
       />
     )
