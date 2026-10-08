@@ -43,17 +43,30 @@ export type TransaccionDatafono =
 /**
  * Cuerpo de respuesta del Transaction Manager (HTTP 200). Sólo `responseCode`
  * está garantizado; el resto de campos depende del tipo de transacción y de
- * si fue aprobada o no (ej. `authorizationNumber`/`referenceNumber` sólo
- * vienen en transacciones aprobadas). Se deja un índice `[clave: string]`
- * para no perder ningún campo adicional no documentado que el terminal
- * decida incluir (ej. últimos 4 dígitos de tarjeta, tipo de tarjeta, etc.),
- * aunque este código no los use todavía.
+ * si fue aprobada o no (ej. `authorizationNumber`/`referenceNumber`/
+ * `maskedCardNumber`/`cardHolderName` normalmente sólo vienen en
+ * transacciones aprobadas — ver ejemplo documentado por BAC con
+ * `responseCode: "00"`). Se deja además un índice `[clave: string]` para no
+ * perder ningún campo adicional no documentado que el terminal decida
+ * incluir, aunque este código no lo use todavía.
  */
 export interface RespuestaDatafonoBody {
   responseCode: string
   responseCodeDescription?: string
   authorizationNumber?: string
   referenceNumber?: string
+  /** Hora del host en formato "HHMMSS" (ej. "104512"), según ejemplo documentado por BAC. */
+  hostTime?: string
+  /** Fecha del host en formato "YYYYMMDD" (ej. "20261008"), según ejemplo documentado por BAC. */
+  hostDate?: string
+  systemTraceNumber?: string
+  /** Eco del `invoice` enviado en el request (ver `formatInvoiceDatafono` en services/datafono.ts). */
+  invoice?: string
+  /** Número de tarjeta enmascarado (ej. "####1234####"), para mostrar/imprimir en el comprobante sin exponer el número completo. */
+  maskedCardNumber?: string
+  cardHolderName?: string
+  /** "1" si Transaction Manager espera que el kiosko imprima su propio voucher de la transacción con tarjeta; "0" si no aplica/no hace falta. */
+  printVoucher?: string
   [clave: string]: unknown
 }
 
@@ -96,4 +109,11 @@ export interface ResultadoDatafono {
   responseCode?: string
   authorizationNumber?: string
   referenceNumber?: string
+  /** Campos adicionales del body de una transacción aprobada (ver `RespuestaDatafonoBody`), propagados sin interpretar — útiles más adelante para el comprobante impreso (ej. tarjeta enmascarada) sin tener que volver a tocar `services/datafono.ts`. */
+  hostTime?: string
+  hostDate?: string
+  systemTraceNumber?: string
+  maskedCardNumber?: string
+  cardHolderName?: string
+  printVoucher?: string
 }

@@ -874,10 +874,27 @@ export default function PaymentScreen({
               )}
 
               {estado === 'procesando' && (
+                // Mientras `enviarTransaccionDatafono` está en vuelo (hasta
+                // TIMEOUT_MS, ver services/datafono.ts — ahora 300s/5min en
+                // vez de los 35s originales, ya que un cobro real requiere
+                // que el cliente inserte/pase la tarjeta y complete su PIN
+                // en el pinpad físico) se muestra este aviso persistente en
+                // vez de dejar sólo un spinner ambiguo: el operador necesita
+                // saber explícitamente que la transacción sigue en curso y
+                // que NO debe cerrar/reiniciar el kiosko pensando que se
+                // colgó (ver requerimiento — antes sólo decía "Sigue las
+                // instrucciones…" sin indicar cuánto podía tardar). El botón
+                // "Regresar a MENU" del header ya queda deshabilitado
+                // mientras `estado !== 'idle'` (ver arriba), así que no hay
+                // forma de cancelar/salir de esta pantalla durante la espera.
                 <div className="flex flex-col items-center gap-3 py-1">
                   <div className="h-12 w-12 animate-spin rounded-full border-4 border-wood-200 border-t-brand-red" />
                   <p className="text-base font-semibold text-wood-700">
-                    {t('payment.followInstructions')}
+                    {t('payment.esperandoDatafono')}
+                  </p>
+                  <p className="text-sm text-wood-500">{t('payment.followInstructions')}</p>
+                  <p className="max-w-xs text-xs font-medium text-amber-600">
+                    {t('payment.noCerrarSesionDatafono')}
                   </p>
                 </div>
               )}

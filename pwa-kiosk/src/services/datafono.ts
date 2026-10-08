@@ -48,10 +48,21 @@ const terminalesConTransaccionActiva = new Set<string>()
  * petición (`AbortController`). Transaction Manager no documenta un timeout
  * propio y, al ser HTTP plano sobre la red interna del kiosko, un terminal
  * trabado o desconectado podía dejar la UI esperando indefinidamente (ver
- * hallazgo de auditoría). 35s da margen de sobra para que el cliente
- * inserte/pase la tarjeta físicamente sin disparar un falso timeout.
+ * hallazgo de auditoría).
+ *
+ * 300s (5 minutos), antes 35s: el valor corto resultó insuficiente en
+ * pruebas reales — el Transaction Manager primero reenvía el monto al
+ * pinpad físico (el cliente ve el monto en pantalla) y SÓLO DESPUÉS espera a
+ * que el cliente inserte/pase la tarjeta y digite su PIN, lo cual puede
+ * tardar más de 35s sin que eso signifique ningún problema de comunicación
+ * (ver conversación de depuración 2026-10-08 — requerimiento explícito de
+ * extender el timer). Mientras este timer corre, `PaymentScreen` mantiene
+ * `estado === 'procesando'` y muestra un aviso persistente ("Esperando
+ * respuesta del datáfono…", ver `payment.esperandoDatafono` en
+ * translations.ts) para que el operador no confunda la espera larga con un
+ * cuelgue y no cierre/reinicie el kiosko a media transacción.
  */
-const TIMEOUT_MS = 35_000
+const TIMEOUT_MS = 300_000
 
 /** Mensajes fijos para códigos HTTP documentados por Transaction Manager, usados cuando la respuesta no es 200 (así que no hay `responseCode` que interpretar). */
 const DESCRIPCION_HTTP: Record<number, string> = {
@@ -87,6 +98,16 @@ function interpretarResponseCode(body: RespuestaDatafonoBody): ResultadoDatafono
     responseCode: codigo,
     authorizationNumber: body.authorizationNumber,
     referenceNumber: body.referenceNumber,
+    // Se propagan sin interpretar (ver ejemplo de body documentado por BAC
+    // con responseCode "00") — no afectan la categoría/mensaje, pero quedan
+    // disponibles en `ResultadoDatafono` para quien los necesite más
+    // adelante (ej. imprimir la tarjeta enmascarada en el comprobante).
+    hostTime: body.hostTime,
+    hostDate: body.hostDate,
+    systemTraceNumber: body.systemTraceNumber,
+    maskedCardNumber: body.maskedCardNumber,
+    cardHolderName: body.cardHolderName,
+    printVoucher: body.printVoucher,
   }
 
   const porCodigo: Record<string, { categoria: CategoriaResultadoDatafono; permiteReintentar: boolean }> = {
@@ -246,7 +267,10 @@ export async function enviarTransaccionDatafono(transaccion: TransaccionDatafono
       })
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
-        const mensaje = `El datáfono no respondió dentro de ${TIMEOUT_MS / 1000} segundos (tiempo de espera agotado).`
+        // Se expresa en minutos (en vez de "300 segundos", poco legible)
+        // ahora que TIMEOUT_MS subió a 5 minutos — ver comentario de
+        // TIMEOUT_MS arriba.
+        const mensaje = `El datáfono no respondió dentro de ${TIMEOUT_MS / 60_000} minutos (tiempo de espera agotado).`
         registrarLogDatafono('response', {
           endpoint: DATAFONO_CONFIG.endpoint,
           terminalId,
