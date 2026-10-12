@@ -16,7 +16,7 @@ import DatafonoPopup from '../ui/DatafonoPopup'
 import { cartItemCount, cartTotal, lineTerminosTexto, useCartStore } from '../../store/cartStore'
 import { useMesaStore } from '../../store/mesaStore'
 import { generarFactura, registrarVentaSimple } from '../../services/facturacion'
-import { generarConsecutivo } from '../../services/consecutivo'
+import { CAJA_ID, generarConsecutivo } from '../../services/consecutivo'
 import { encolarVenta } from '../../services/offlineQueue'
 import { enviarVentaACodisa } from '../../services/codisa'
 import { enviarVentaAAwsIot } from '../../services/awsIot'
@@ -110,6 +110,13 @@ export default function PaymentScreen({
   // pago con datáfono (único método de cobro de este kiosko), nunca a
   // factura/WS DF/tickets, que ya tienen sus propios pop-ups.
   const [resultadoDatafono, setResultadoDatafono] = useState<ResultadoDatafono | null>(null)
+  // Captura de `authorizationNumber`/`referenceNumber` de la transacción
+  // SALE aprobada (ver `Venta.autorizacionDatafono`/`referenciaDatafono` en
+  // types/order.ts). Se guarda en un ref (no en `resultadoDatafono`, que ya
+  // se limpia a `null` en `handleCerrarDatafono` para cerrar el pop-up)
+  // justo antes de esa limpieza, para que el efecto de confirmación de
+  // venta (más abajo) pueda leerla al armar `nuevaVenta`.
+  const datosDatafonoAprobadoRef = useRef<{ autorizacion?: string; referencia?: string } | null>(null)
 
   const mesaCompartida = useMesaStore((s) => s.compartida)
   const mesaId = useMesaStore((s) => s.mesaId)
@@ -251,6 +258,12 @@ export default function PaymentScreen({
       return
     }
     const fueAprobada = resultadoDatafono?.categoria === 'aprobada'
+    if (fueAprobada) {
+      datosDatafonoAprobadoRef.current = {
+        autorizacion: resultadoDatafono?.authorizationNumber,
+        referencia: resultadoDatafono?.referenceNumber,
+      }
+    }
     setResultadoDatafono(null)
     setEstado(fueAprobada ? 'aprobado' : 'idle')
   }
@@ -329,6 +342,7 @@ export default function PaymentScreen({
     }))
     const nuevaVenta: Venta = {
       id: obtenerNumeroFactura(),
+      caja: CAJA_ID,
       items,
       mesa,
       total: cartTotal(lines),
@@ -336,6 +350,8 @@ export default function PaymentScreen({
       tipoPago: tipoPago ?? undefined,
       cliente: tipoPago === 'factura' && facturaResultado?.ok ? (cliente ?? undefined) : undefined,
       claveFactura: tipoPago === 'factura' && facturaResultado?.ok ? facturaResultado.clave : undefined,
+      autorizacionDatafono: datosDatafonoAprobadoRef.current?.autorizacion,
+      referenciaDatafono: datosDatafonoAprobadoRef.current?.referencia,
     }
 
     encolarVenta(nuevaVenta)

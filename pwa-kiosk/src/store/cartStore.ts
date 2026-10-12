@@ -171,8 +171,27 @@ export function cartItemCount(lines: CartLine[]): number {
   return lines.reduce((sum, l) => sum + l.quantity, 0)
 }
 
+/**
+ * Suma `price * quantity` de todas las líneas del carrito. Ignora (con
+ * aviso en consola, sin interrumpir el cálculo) cualquier línea con
+ * `price`/`quantity` corrupto — no debería ocurrir con el flujo normal de
+ * la UI (cantidades sólo suben de 1 en 1 desde el stepper, precios vienen
+ * del catálogo fijo), pero así el total nunca se vuelve `NaN` ni negativo
+ * por una línea corrupta; de todos modos la red de seguridad final sigue
+ * siendo `formatMontoDatafono` justo antes de cobrar (ver
+ * `services/datafono.ts`), que sí lanza si el total ya armado es inválido
+ * (ver hallazgo de auditoría).
+ */
 export function cartTotal(lines: CartLine[]): number {
-  return lines.reduce((sum, l) => sum + l.price * l.quantity, 0)
+  return lines.reduce((sum, l) => {
+    const precioValido = Number.isFinite(l.price) && l.price >= 0
+    const cantidadValida = Number.isFinite(l.quantity) && l.quantity > 0
+    if (!precioValido || !cantidadValida) {
+      console.warn('[cartStore] Línea de carrito con price/quantity inválido, se ignora en el total:', l)
+      return sum
+    }
+    return sum + l.price * l.quantity
+  }, 0)
 }
 
 /**

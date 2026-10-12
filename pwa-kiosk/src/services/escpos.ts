@@ -37,13 +37,13 @@ import logoTermicoUrl from '../assets/logo/logo-resta-termico.png'
  *   que sigue — ver `MARCADOR_FIN_ENCABEZADO`.
  * - Avance extra de papel en blanco (`ESC d 5`) antes del corte en todo
  *   ticket, para que no se pierda texto al arrancar — ver `FEED_EXTRA_FINAL`.
- * - El símbolo ₡ no se manda como byte de texto (ninguna code page estándar
- *   lo tiene, y depender de un byte "no estándar" asumido para la ZKP8016
- *   es frágil): se rasteriza como una pequeña imagen 1bpp (mismo comando
- *   `GS v 0` que el logo) y se concatena en el buffer justo donde aparece
- *   el carácter ₡ en el texto — ver `generarRasterSimboloColon` y el split
- *   de texto en `agregarLinea`. Así el símbolo sale siempre correcto sin
- *   importar qué code page tenga activa la impresora.
+ * - El símbolo ₡ se imprime como texto plano, sustituido por la letra 'c'
+ *   (0x63 ASCII, sin codepage especial) — ver `agregarLinea`. Antes se
+ *   rasterizaba como una pequeña imagen 1bpp (mismo mecanismo que el logo)
+ *   porque ni 'c' suelta ni el byte 0xA2 (que colisiona con 'ó' en CP437)
+ *   se leían bien como símbolo de moneda; requerimiento de negocio vigente
+ *   pide ahora texto plano "c" en todos los tiquetes (cliente, carnicería,
+ *   parrilla), así que esta es la decisión activa — ver `agregarLinea`.
  */
 
 // --- Comandos ESC/POS (mismos bytes que epson-config.js de node-thermal-printer) ---
@@ -94,12 +94,14 @@ const MARCADOR_FIN_ENCABEZADO: TicketLine = 'Fin Encabezado'
  * Limitación conocida: el estándar CP437 no tiene el signo de colón (₡) ni
  * mayúsculas acentuadas (Á/Í/Ó/Ú, salvo É).
  *
- * Para el colón, en vez de aproximar con un byte (se probaron 'c' minúscula
- * y luego `0xA2`, ambos con problemas: el primero no se lee como símbolo de
- * moneda, el segundo colisiona con 'ó' en CP437 estándar), el símbolo ₡ se
- * rasteriza como una pequeña imagen 1bpp y se concatena en el buffer igual
- * que el logo — ver `generarRasterSimboloColon` y el split de texto en
- * `agregarLinea` más abajo. Así no depende de ningún byte de code page.
+ * Para el colón: históricamente se probó aproximarlo con un byte (una 'c'
+ * minúscula primero, y luego `0xA2`), pero ambos se descartaron en su
+ * momento (la 'c' sola no se leía como símbolo de moneda, y `0xA2` colisiona
+ * con 'ó' en CP437 estándar), por lo que se pasó a rasterizarlo como imagen
+ * 1bpp. Requerimiento de negocio vigente revierte esa decisión: ahora el
+ * signo ₡ se reemplaza por texto plano "c" (ASCII 0x63) en todos los
+ * tiquetes — ver `agregarLinea` más abajo, donde se hace la sustitución
+ * antes de codificar la línea.
  *
  * Las mayúsculas acentuadas no mapeadas en CP437 se resuelven quitándoles la
  * tilde (Á→A, Í→I, Ó→O, Ú→U, ver `MAPA_SIN_TILDE` abajo) en vez de caer en
@@ -140,9 +142,8 @@ const MAPA_SIN_TILDE: Record<string, number> = {
 
 /**
  * Codifica texto plano a bytes CP437. NUNCA recibe el carácter ₡: `agregarLinea`
- * (abajo) separa ese carácter del resto del texto antes de llamar esta
- * función, porque el colón se imprime como imagen (`generarRasterSimboloColon`),
- * no como byte — ver comentario de archivo arriba.
+ * (abajo) lo reemplaza por la letra 'c' (texto plano, sin codepage especial)
+ * antes de llamar esta función — ver comentario de archivo arriba.
  */
 function codificarTexto(texto: string): number[] {
   const bytes: number[] = []
@@ -170,64 +171,23 @@ function codificarTexto(texto: string): number[] {
 }
 
 /**
- * Bitmap 1bpp del símbolo ₡, generado una sola vez y reutilizado en todas
- * las líneas con monto del ticket (ver `generarRasterSimboloColon`); se
- * memoiza porque el glyph es siempre igual — no tiene sentido re-rasterizarlo
- * en cada línea.
- */
-let cacheRasterSimboloColon: number[] | null = null
-
-/**
- * Rasteriza el símbolo ₡ como una pequeña imagen 1bpp (comando `GS v 0`,
- * igual que el logo, ver `generarRasterLogo`), dibujándolo con `<canvas>` en
- * vez de depender de un byte de code page. `agregarLinea` concatena este
- * bitmap en el buffer justo en el punto donde aparece el carácter ₡ dentro
- * del texto de la línea, así el símbolo sale impreso correctamente sin
- * importar la tabla de caracteres activa en la impresora.
- *
- * Dimensiones: 16×24 px — 16 (múltiplo de 8, requerido por el formato de
- * bytes de `GS v 0`) px de ancho es aprox. 1 carácter y medio, y 24 px de
- * alto coincide con el alto de una línea de texto normal en la fuente A por
- * defecto de la mayoría de impresoras ESC/POS (12x24 puntos), para que el
- * símbolo quede proporcionado con el resto del texto de la línea.
- */
-function generarRasterSimboloColon(): number[] {
-  if (cacheRasterSimboloColon) return cacheRasterSimboloColon
-
-  const anchoPx = 16
-  const altoPx = 24
-
-  const canvas = document.createElement('canvas')
-  canvas.width = anchoPx
-  canvas.height = altoPx
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('No se pudo obtener el contexto 2D del canvas para rasterizar el símbolo ₡')
-
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, anchoPx, altoPx)
-  ctx.fillStyle = '#000000'
-  ctx.font = 'bold 20px sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('₡', anchoPx / 2, altoPx / 2 + 1)
-
-  const imageData = ctx.getImageData(0, 0, anchoPx, altoPx)
-  cacheRasterSimboloColon = imageDataARasterEscPos(imageData)
-  return cacheRasterSimboloColon
-}
-
-/**
  * Agrega los bytes de una línea de ticket: texto con sus estilos bold/big
- * (igual que el `for` de `print.ts`), separando e intercalando el símbolo ₡
- * como imagen (ver `generarRasterSimboloColon`) en vez de mandarlo como byte
- * de texto — el signo de colón es un dato crítico en el comprobante de
- * cliente (montos), así que no puede depender de que la code page activa en
- * la impresora lo soporte.
+ * (igual que el `for` de `print.ts`), reemplazando primero el símbolo ₡ por
+ * la letra 'c' (texto plano, ASCII 0x63) — antes se intercalaba una imagen
+ * rasterizada en su lugar (ver historial en el comentario de archivo
+ * arriba), pero requerimiento de negocio vigente pide texto plano simple,
+ * sin codepage especial, en todos los tiquetes (cliente, carnicería,
+ * parrilla). Cada sustitución se registra en consola para trazabilidad.
  */
 function agregarLinea(partes: (number[] | Uint8Array)[], line: TicketLine): void {
-  const texto = typeof line === 'string' ? line : line.text
+  const textoOriginal = typeof line === 'string' ? line : line.text
   const bold = typeof line !== 'string' && !!line.bold
   const big = typeof line !== 'string' && !!line.big
+
+  const texto = textoOriginal.includes('₡') ? textoOriginal.replace(/₡/g, 'c') : textoOriginal
+  if (texto !== textoOriginal) {
+    console.log('[escpos] Símbolo ₡ reemplazado por "c" (texto plano):', { original: textoOriginal, impreso: texto })
+  }
 
   if (bold) partes.push(TXT_BOLD_ON)
   // `big` replica exactamente print.ts: manda doble-alto y luego doble-ancho
@@ -235,21 +195,7 @@ function agregarLinea(partes: (number[] | Uint8Array)[], line: TicketLine): void
   // así ya se comporta `node-thermal-printer` en producción).
   if (big) partes.push(TXT_2HEIGHT, TXT_2WIDTH)
 
-  // Divide el texto en segmentos normales y el símbolo ₡ (si aparece), para
-  // poder intercalar su bitmap sin romper el resto de la línea.
-  let segmento = ''
-  for (const char of texto) {
-    if (char === '₡') {
-      if (segmento) {
-        partes.push(codificarTexto(segmento))
-        segmento = ''
-      }
-      partes.push(generarRasterSimboloColon())
-    } else {
-      segmento += char
-    }
-  }
-  if (segmento || texto === '') partes.push(codificarTexto(segmento))
+  partes.push(codificarTexto(texto))
   partes.push([LF])
 
   if (big) partes.push(TXT_NORMAL)

@@ -1,70 +1,72 @@
 /**
- * Consecutivo de orden por punto de venta y mes.
+ * Consecutivo global de orden, usado como `Venta.id` (ver `types/order.ts`).
  *
- * Formato: `<puntoVenta>-<año>-<mes>-<consecutivo>` (ej. "01-2026-08-00001").
- * El número de 5 dígitos se reinicia automáticamente cada mes porque se
- * guarda en localStorage bajo una clave `<puntoVenta>-<año>-<mes>`: al
- * cambiar el mes la clave es distinta y el contador simplemente empieza de
- * nuevo en 1, sin necesidad de lógica de "reinicio" explícita.
+ * Formato: número de 9 dígitos (ej. "000000005"), que arranca en
+ * "000000000" y sube de 1 en 1 en cada orden confirmada, SIN reiniciarse
+ * nunca — ni por mes, ni por punto de venta, ni al reiniciar el kiosko
+ * (requerimiento explícito: "el número de orden debe ser consecutivo
+ * global, nunca se resetea"). Reemplaza el esquema anterior
+ * (`<puntoVenta>-<año>-<mes>-<consecutivo de 5 dígitos>`, con reinicio
+ * automático cada mes), que usaba una clave de localStorage distinta por
+ * periodo; este usa una única clave fija (`STORAGE_KEY`), así que el
+ * contador sigue subiendo sin importar cuánto tiempo pase.
+ *
+ * `formatInvoiceDatafono` (ver `services/datafono.ts`) sigue funcionando
+ * sin cambios con este formato: al no tener guiones, cae directo en su
+ * rama de respaldo (quita caracteres no numéricos — ninguno en este caso— y
+ * toma los últimos 12), que ya deja pasar un string puramente numérico de 9
+ * dígitos tal cual.
  */
 
-/**
- * Código de punto de venta / kiosko asignado a este dispositivo. Se usa como
- * prefijo del consecutivo de cada orden y queda impreso en los tiquetes para
- * identificar en qué kiosko se generó.
- *
- * TODO: reemplazar por el código real de cada kiosko cuando haya más de un
- * dispositivo físico (ej. variable de entorno o pantalla de configuración
- * por dispositivo). Se hardcodea aquí siguiendo el mismo patrón ya usado en
- * el resto del proyecto para configuración de integraciones/dispositivo
- * (ver `WSDF_CONFIG.idTienda` en `services/wsdf.ts`), ya que el proyecto no
- * usa variables de entorno (`.env` / `import.meta.env`) en ningún otro lado
- * todavía.
- */
-export const PUNTO_VENTA = '01'
+const STORAGE_KEY = 'kiosko:consecutivo-global'
 
-const STORAGE_KEY = 'kiosko:consecutivos'
+/** Cantidad fija de dígitos del consecutivo impreso/guardado (ej. "000000000"). */
+const DIGITOS_CONSECUTIVO = 9
 
-/** Último consecutivo usado, por clave `<puntoVenta>-<año>-<mes>`. */
-type ConsecutivosPorPeriodo = Record<string, number>
-
-function leerConsecutivos(): ConsecutivosPorPeriodo {
+function leerUltimoConsecutivo(): number {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as ConsecutivosPorPeriodo) : {}
+    const valor = raw === null ? -1 : Number(raw)
+    return Number.isFinite(valor) && valor >= -1 ? valor : -1
   } catch {
     // localStorage no disponible (modo privado, cuota llena, etc.): se
-    // continúa sin historial, el contador arranca en 1 (mismo criterio de
-    // degradación silenciosa que `mesaLocks.ts`).
-    return {}
+    // continúa sin historial, el contador arranca en 0 en esta sesión
+    // (mismo criterio de degradación silenciosa que `mesaLocks.ts`).
+    return -1
   }
 }
 
-function guardarConsecutivos(data: ConsecutivosPorPeriodo): void {
+function guardarUltimoConsecutivo(valor: number): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+    localStorage.setItem(STORAGE_KEY, String(valor))
   } catch {
-    // Ver comentario equivalente en `leerConsecutivos`.
+    // Ver comentario equivalente en `leerUltimoConsecutivo`.
   }
-}
-
-function claveDelPeriodo(fecha: Date): { año: string; mes: string; clave: string } {
-  const año = String(fecha.getFullYear())
-  const mes = String(fecha.getMonth() + 1).padStart(2, '0')
-  return { año, mes, clave: `${PUNTO_VENTA}-${año}-${mes}` }
 }
 
 /**
- * Genera y persiste el siguiente consecutivo de orden para este punto de
- * venta, con formato `<puntoVenta>-<año>-<mes>-<consecutivo 5 dígitos>`.
- * Debe llamarse exactamente una vez por orden confirmada (ver
- * `PaymentScreen.tsx`, construcción de `nuevaVenta`).
+ * Genera y persiste el siguiente consecutivo global de orden: arranca en
+ * "000000000" y sube de 1 en 1 en cada llamada, sin reiniciarse nunca. Debe
+ * llamarse exactamente una vez por orden confirmada (ver `PaymentScreen.tsx`,
+ * construcción de `nuevaVenta`), ya que cada llamada consume el número.
  */
-export function generarConsecutivo(fecha: Date = new Date()): string {
-  const { año, mes, clave } = claveDelPeriodo(fecha)
-  const consecutivos = leerConsecutivos()
-  const siguiente = (consecutivos[clave] ?? 0) + 1
-  consecutivos[clave] = siguiente
-  guardarConsecutivos(consecutivos)
-  return `${PUNTO_VENTA}-${año}-${mes}-${String(siguiente).padStart(5, '0')}`
+export function generarConsecutivo(): string {
+  const siguiente = leerUltimoConsecutivo() + 1
+  guardarUltimoConsecutivo(siguiente)
+  const consecutivo = String(siguiente).padStart(DIGITOS_CONSECUTIVO, '0')
+  console.log('[consecutivo] Consecutivo generado:', consecutivo)
+  return consecutivo
 }
+
+/**
+ * Identificador fijo de la caja/kiosko que genera las órdenes, guardado
+ * junto con cada orden (`Venta.caja`, ver `types/order.ts`) e impreso en el
+ * encabezado del comprobante del cliente ("Caja: K001", ver
+ * `encabezadoCliente` en `services/tickets.ts`).
+ *
+ * TODO: reemplazar por el código real de cada caja/kiosko cuando haya más
+ * de un dispositivo físico (ej. variable de entorno o pantalla de
+ * configuración por dispositivo) — mismo TODO que tenía `PUNTO_VENTA` del
+ * esquema de consecutivo anterior, ya removido junto con éste.
+ */
+export const CAJA_ID = 'K001'

@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Config operativa por kiosko (ver .env.example) — no se versiona el archivo
+# real, sólo la plantilla.
+.env
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -1,4 +1,5 @@
-import { GUARNICIONES, PRODUCTS, formatCRC, opcionParaMostrar } from '../data/catalog'
+import { GUARNICIONES, PRODUCTS, opcionParaMostrar } from '../data/catalog'
+import { CAJA_ID } from './consecutivo'
 import type { CategoryId } from '../types/catalog'
 import type { OrderItem, Venta } from '../types/order'
 
@@ -219,34 +220,86 @@ function partirEnLineas(texto: string, ancho: number = ANCHO): string[] {
 }
 
 /**
- * Formatea un monto para el comprobante del cliente SIN el símbolo ₡ (a
- * diferencia de `formatCRC`, usado en el resto de la interfaz y en el
- * tiquete de cierre de caja): sólo el número con dos decimales fijos (ej.
- * `2000.00`), sin separador de miles. El comprobante impreso al comensal no
- * debe depender del símbolo ₡ (que en ESC/POS se rasteriza como imagen, ver
- * `generarRasterSimboloColon` en `services/escpos.ts`) ni de un formato con
- * coma de miles — sólo el valor numérico plano, igual en toda línea con
- * precio del ticket de cliente (items y total).
+ * Tasa de IVA usada únicamente para desglosar el monto de cada ítem del
+ * comprobante del cliente (`ticketCliente`) en su parte sin impuesto y su
+ * parte de IVA. No es la tasa canónica de facturación electrónica (ver
+ * `IVA_RATE`/cálculos de `PaymentScreen.tsx` y `services/facturacion.ts`);
+ * es un desglose informativo propio de este tiquete.
  */
-function formatMontoTicketCliente(monto: number): string {
-  return monto.toFixed(2)
+const TASA_IVA = 0.13
+
+/**
+ * Formatea un monto para el comprobante del cliente con el prefijo "c" (en
+ * vez del símbolo ₡, que en ESC/POS requiere rasterizarse como imagen, ver
+ * `services/escpos.ts`) seguido de un espacio y el número con dos decimales
+ * fijos (ej. `c 12500.00`). Usado en todas las líneas con monto del ticket
+ * de cliente (items y totales).
+ */
+function formatMontoFactura(monto: number): string {
+  return `c ${monto.toFixed(2)}`
 }
 
 /**
- * Texto del monto TOTAL listo para imprimir en el comprobante del cliente,
- * con la leyenda "I.V.I." (Impuesto de Ventas Incluido) pegada al monto,
- * para dejar explícito en el tiquete impreso que el impuesto de venta ya
- * está incluido (los precios del catálogo ya lo incluyen, ver `IVA_RATE` en
- * `PaymentScreen`; este helper sólo agrega la leyenda visible al imprimir).
- * Usado únicamente en la línea "TOTAL PAGADO:" — los montos de cada item
- * individual del comprobante no llevan esta leyenda (ver `ticketCliente`).
- * Usa `formatMontoTicketCliente` (sin símbolo ₡, ver ese helper) en vez de
- * `formatCRC`, que sigue usándose en el resto de la interfaz y en el
- * tiquete de cierre de caja (`ticketCierreCaja`), no afectado por este
- * requerimiento.
+ * Desglosa un monto que ya incluye impuesto (el precio listado, como se
+ * cobra) en su parte sin impuesto y su parte de IVA, de forma que
+ * `sinImpuesto + iva` sea exactamente igual a `montoConImpuesto` (sin
+ * arrastre de redondeo): `iva = monto * 13%`, `sinImpuesto = monto - iva`.
+ * Usado para mostrar en el comprobante del cliente el precio de cada ítem
+ * sin impuestos, y para acumular el Sub-Total/IVA del ticket (ver
+ * `ticketCliente`).
  */
-function montoTotalConIvi(monto: number): string {
-  return `${formatMontoTicketCliente(monto)} I.V.I.`
+function desglosarImpuesto(montoConImpuesto: number): { sinImpuesto: number; iva: number } {
+  const iva = montoConImpuesto * TASA_IVA
+  return { sinImpuesto: montoConImpuesto - iva, iva }
+}
+
+/**
+ * Ancho de la columna "Cant" del área de items del comprobante del cliente
+ * (ver `ticketCliente`): igual a `MARGEN_IZQUIERDO_ITEM`, para que las líneas
+ * de detalle sin cantidad (Corte, Termino, guarniciones, extras, opción)
+ * queden alineadas bajo la columna "Producto", igual que ya ocurría antes de
+ * este formato de columnas.
+ */
+const COL_CANT = MARGEN_IZQUIERDO_ITEM.length
+
+/**
+ * Arma el encabezado de 3 columnas ("Cant", "Producto", "Precio") del área
+ * de items del comprobante del cliente, seguido de la línea punteada
+ * separadora (`SEPARADOR`). "Precio" queda alineado a la misma columna
+ * derecha que los montos de `lineaItemColumnas`.
+ */
+function encabezadoColumnasItems(): TicketLine[] {
+  const prefijo = `${'Cant'.padEnd(COL_CANT)}Producto`
+  const espacios = Math.max(1, ANCHO - prefijo.length - 'Precio'.length)
+  return [`${prefijo}${' '.repeat(espacios)}Precio`, SEPARADOR]
+}
+
+/**
+ * Línea de item en 3 columnas para el comprobante del cliente: "Cant"
+ * (estrecha, sin la letra "x", ver `COL_CANT`), "Producto" (la columna más
+ * ancha) y "Precio" (alineado a la derecha). Si el nombre del producto es
+ * muy largo para compartir línea con el precio, el precio baja a su propia
+ * línea, siempre alineado a la misma columna derecha (igual criterio que
+ * `lineaConMonto`, usado por el resto de los tickets).
+ */
+function lineaItemColumnas(cantidad: number, producto: string, precio: string): string[] {
+  const prefijo = `${String(cantidad).padEnd(COL_CANT)}${producto}`
+  const espaciosDisponibles = ANCHO - prefijo.length - precio.length
+  if (espaciosDisponibles >= 1) {
+    return [`${prefijo}${' '.repeat(espaciosDisponibles)}${precio}`]
+  }
+  const relleno = Math.max(0, ANCHO - precio.length)
+  return [prefijo, `${' '.repeat(relleno)}${precio}`]
+}
+
+/**
+ * Línea de detalle de un item (Corte, Termino, guarniciones, extras,
+ * opción) en el área de 3 columnas del comprobante del cliente: sin
+ * cantidad ni precio, indentada bajo la columna "Producto" (mismo ancho que
+ * `COL_CANT`, ver `lineaItemColumnas`).
+ */
+function lineaDetalleColumnas(texto: string): string {
+  return `${' '.repeat(COL_CANT)}${texto}`
 }
 
 /**
@@ -306,15 +359,23 @@ function nombreCarniceria(item: OrderItem): string | null {
  * guarniciones, extras, opción) ni guarnición: la carnicería sólo necesita
  * saber cuánto preparar de cada corte, el detalle de preparación va en el
  * ticket de restaurante (`agruparParaCocina`).
+ *
+ * Todas las líneas se marcan como `big` (doble ancho/doble alto en la
+ * impresión térmica, ver `agregarLinea` en `services/escpos.ts`) para que la
+ * carnicería pueda leer cada corte a preparar de un vistazo, sin acercarse al
+ * tiquete (requerimiento de letra más grande para carnicería).
  */
-function lineasCarniceria(items: OrderItem[]): string[] {
+function lineasCarniceria(items: OrderItem[]): TicketLine[] {
   const totales = new Map<string, number>()
   for (const item of items) {
     const nombre = nombreCarniceria(item)
     if (!nombre) continue
     totales.set(nombre, (totales.get(nombre) ?? 0) + item.quantity)
   }
-  return [...totales.entries()].flatMap(([nombre, cantidad]) => agregarItem(`${cantidad}x ${nombre}`))
+  return [...totales.entries()].map(([nombre, cantidad]) => ({
+    text: agregarItem(`${cantidad}x ${nombre}`)[0],
+    big: true,
+  }))
 }
 
 export function ticketCarniceria(venta: Venta): TicketLine[] {
@@ -329,13 +390,16 @@ export function ticketCarniceria(venta: Venta): TicketLine[] {
 }
 
 /**
- * Envuelve un texto en un `TicketLine` de tamaño `medium` (un poco más
- * grande de lo normal, sin exagerar), aplicando primero el margen izquierdo
- * mínimo de `agregarItem` (sin monto, por lo que siempre devuelve una sola
- * línea). Usado en todo el ticket de parrilla (ver `lineasItemCocina`).
+ * Envuelve un texto en un `TicketLine`, aplicando primero el margen
+ * izquierdo mínimo de `agregarItem` (sin monto, por lo que siempre devuelve
+ * una sola línea). Si `agrandar` es `true` se marca como `big` (doble
+ * ancho/doble alto en la impresión térmica, ver `agregarLinea` en
+ * `services/escpos.ts`); si no, se devuelve el texto plano (tamaño normal).
+ * Usado en el ticket de parrilla/cocina (ver `lineasItemCocina`).
  */
-function conTamano(texto: string): TicketLine {
-  return { text: agregarItem(texto)[0], medium: true }
+function conTamano(texto: string, agrandar: boolean): TicketLine {
+  const linea = agregarItem(texto)[0]
+  return agrandar ? { text: linea, big: true } : linea
 }
 
 /**
@@ -353,23 +417,25 @@ function conTamano(texto: string): TicketLine {
  * etiquetas. El resto de items conserva las etiquetas ("Termino:",
  * "Guarniciones:") para no perder claridad fuera de ese contexto fijo.
  *
- * Todas las líneas se marcan como `medium` para aumentar ligeramente el
- * tamaño de letra en la impresión térmica en toda la sección de
- * parrilla/cocina.
+ * Sólo los items de la categoría "parrilla" (nombre/cantidad, corte, término
+ * y guarniciones) se marcan como `big` (letra más grande, ver `conTamano`),
+ * según el requerimiento de aumentar la letra de "todos los cortes de
+ * parrilla con su término y guarnición". El resto de items del ticket de
+ * cocina (entradas, bebidas) se imprime a tamaño normal.
  */
 function lineasItemCocina(item: OrderItem): TicketLine[] {
   const lineas: TicketLine[] = []
   const esParrilla = categoriaDe(item) === 'parrilla'
   const opcionPropia = opcionParaMostrar(item.productId, item.opcion)
   const nombreLinea = `${item.quantity}x ${nombreConVariante(item)}${opcionPropia ? ` * ${opcionPropia}` : ''}`
-  lineas.push(conTamano(nombreLinea))
-  if (item.corte) lineas.push(conTamano(`  Corte: ${item.corte}`))
+  lineas.push(conTamano(nombreLinea, esParrilla))
+  if (item.corte) lineas.push(conTamano(`  Corte: ${item.corte}`, esParrilla))
   const termino = terminoTexto(item)
-  if (termino) lineas.push(conTamano(esParrilla ? `  ${termino}` : `  Termino: ${termino}`))
+  if (termino) lineas.push(conTamano(esParrilla ? `  ${termino}` : `  Termino: ${termino}`, esParrilla))
   const guarniciones = guarnicionesTexto(item, { compacto: true, conTitulo: !esParrilla })
-  for (const linea of guarniciones) lineas.push(conTamano(linea))
+  for (const linea of guarniciones) lineas.push(conTamano(linea, esParrilla))
   const extras = extrasTexto(item)
-  if (extras) lineas.push(conTamano(extras))
+  if (extras) lineas.push(conTamano(extras, esParrilla))
   return lineas
 }
 
@@ -496,7 +562,8 @@ function encabezadoCliente(venta: Venta): TicketLine[] {
     'santana@carnesdonfernado.com',
     'Tel: 2282-0182 / Ced. J: 3101017589',
     '',
-    { text: `Factura de Caja#: ${venta.id}`, bold: true },
+    { text: `Factura de caja ${venta.id}`, bold: true },
+    `Caja: ${venta.caja ?? CAJA_ID}`,
     `Fecha: ${fecha.toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' })}`,
     `Mesa: ${venta.mesa}`,
     SEPARADOR,
@@ -505,74 +572,193 @@ function encabezadoCliente(venta: Venta): TicketLine[] {
 }
 
 export function ticketCliente(venta: Venta): TicketLine[] {
-  const lineas: TicketLine[] = [...encabezadoCliente(venta)]
+  const lineas: TicketLine[] = [...encabezadoCliente(venta), ...encabezadoColumnasItems()]
+  let subtotal = 0
+  let iva = 0
+  const itemsLog: { cantidad: number; producto: string; precio: string }[] = []
   for (const item of venta.items) {
-    lineas.push(
-      ...agregarItem(
-        `${item.quantity}x ${nombreConVariante(item)}`,
-        formatMontoTicketCliente(item.price * item.quantity),
-      ),
-    )
-    if (item.corte) lineas.push(...agregarItem(`  Corte: ${item.corte}`))
+    const montoItem = item.price * item.quantity
+    const desglose = desglosarImpuesto(montoItem)
+    subtotal += desglose.sinImpuesto
+    iva += desglose.iva
+    const producto = nombreConVariante(item)
+    const precio = formatMontoFactura(desglose.sinImpuesto)
+    itemsLog.push({ cantidad: item.quantity, producto, precio })
+    lineas.push(...lineaItemColumnas(item.quantity, producto, precio))
+    if (item.corte) lineas.push(lineaDetalleColumnas(`Corte: ${item.corte}`))
     const termino = terminoTexto(item)
-    if (termino) lineas.push(...agregarItem(`  Termino: ${termino}`))
+    if (termino) lineas.push(lineaDetalleColumnas(`Termino: ${termino}`))
     const guarniciones = guarnicionesTexto(item)
-    for (const linea of guarniciones) lineas.push(...agregarItem(linea))
+    for (const linea of guarniciones) lineas.push(lineaDetalleColumnas(linea.trim()))
     const extras = extrasTexto(item)
-    if (extras) lineas.push(...agregarItem(extras))
+    if (extras) lineas.push(lineaDetalleColumnas(extras.trim()))
     const opcion = opcionTexto(item)
-    if (opcion) lineas.push(...agregarItem(opcion))
+    if (opcion) lineas.push(lineaDetalleColumnas(opcion.trim()))
   }
+  const total = subtotal + iva
+
   lineas.push(SEPARADOR)
-  lineas.push(...agregarItem('TOTAL PAGADO:', montoTotalConIvi(venta.total)))
+  lineas.push(...agregarItem('Sub-Total', formatMontoFactura(subtotal)))
+  lineas.push(...agregarItem('IVA', formatMontoFactura(iva)))
+  lineas.push(...agregarItem('Total a pagar', formatMontoFactura(total)))
 
   if (venta.claveFactura) {
     lineas.push('')
     lineas.push(SEPARADOR)
     lineas.push('COMPROBANTE ELECTRONICO')
     if (venta.cliente) {
-      lineas.push(`Cliente: ${venta.cliente.nombre}`)
-      lineas.push(`Cedula: ${venta.cliente.cedula}`)
+      // `partirEnLineas` (mismo helper usado abajo para la clave de 50
+      // dígitos) en vez de empujar el texto tal cual: el nombre puede venir
+      // de Codisa (razón social de persona jurídica) o del campo libre de
+      // `RegistroClienteScreen.tsx` (sin límite de longitud), y sin envolver
+      // podía desbordar las 32 columnas fijas del papel — a diferencia del
+      // resto del archivo, que siempre respeta ese ancho (ver hallazgo de
+      // auditoría).
+      lineas.push(...partirEnLineas(`Cliente: ${venta.cliente.nombre}`))
+      lineas.push(...partirEnLineas(`Cedula: ${venta.cliente.cedula}`))
     }
     lineas.push('Clave:')
     lineas.push(...partirEnLineas(venta.claveFactura, 20))
   }
 
   lineas.push('')
-  lineas.push('¡Gracias por su visita!')
+  lineas.push('Gracias por su compra')
+  lineas.push('Los esperamos pronto')
+
+  console.log('[tickets:cliente] Factura de caja generada:', {
+    consecutivo: venta.id,
+    caja: venta.caja ?? CAJA_ID,
+    items: itemsLog,
+    subtotal: subtotal.toFixed(2),
+    iva: iva.toFixed(2),
+    total: total.toFixed(2),
+  })
+
   return lineas
 }
 
 /**
- * Tiquete de cierre de caja: resumen de todas las ventas del día, generado
- * bajo demanda desde el panel de administración (botón "Cierre de Caja",
- * ver `AdminScreen.tsx` -> `PanelCierreCaja`). Lista cada orden con su monto
- * pagado y termina con el total acumulado del día.
+ * Ancho de la columna "# Orden" del área de órdenes del tiquete de cierre de
+ * caja (ver `ticketCierreCaja`): suficiente para "#" + el consecutivo de 9
+ * dígitos (ver `services/consecutivo.ts`) más un espacio de separación.
+ */
+const COL_ORDEN_CIERRE = 11
+
+/** Ancho de la columna "Hora" del tiquete de cierre de caja: "HH:MM" (formato 24 horas, ver `lineaOrdenCierre`) más un espacio. */
+const COL_HORA_CIERRE = 7
+
+/**
+ * Arma el encabezado de 3 columnas ("# Orden", "Hora", "Total") del área de
+ * órdenes del tiquete de cierre de caja, seguido de la línea punteada
+ * separadora (`SEPARADOR`). "Total" queda alineado a la misma columna
+ * derecha que los montos de `lineaOrdenCierre`.
+ */
+function encabezadoColumnasCierre(): TicketLine[] {
+  const prefijo = `${'# Orden'.padEnd(COL_ORDEN_CIERRE)}${'Hora'.padEnd(COL_HORA_CIERRE)}`
+  const espacios = Math.max(1, ANCHO - prefijo.length - 'Total'.length)
+  return [`${prefijo}${' '.repeat(espacios)}Total`, SEPARADOR]
+}
+
+/**
+ * Formatea la hora de 12 horas con sufijo "am"/"pm" pegado (sin punto ni
+ * espacio interno, ej. `3:12:27 pm`), a diferencia de `toLocaleString('es-CR', ...)`
+ * que en este entorno devuelve "a. m."/"p. m." (con puntos y espacio
+ * interno) — formato pedido explícitamente para la línea de fecha/hora del
+ * encabezado del tiquete de cierre de caja (ver `ticketCierreCaja`).
+ */
+function formatHoraAmPm(fecha: Date): string {
+  const minutos = String(fecha.getMinutes()).padStart(2, '0')
+  const segundos = String(fecha.getSeconds()).padStart(2, '0')
+  const sufijo = fecha.getHours() >= 12 ? 'pm' : 'am'
+  const horas12 = fecha.getHours() % 12 || 12
+  return `${horas12}:${minutos}:${segundos} ${sufijo}`
+}
+
+/**
+ * Línea de una orden en 3 columnas para el tiquete de cierre de caja:
+ * "# Orden" (`#<consecutivo>`), "Hora" y "Total" (alineado a la derecha). Si
+ * no hay espacio para las 3 columnas en una sola línea (ej. un monto muy
+ * grande), el total baja a su propia línea, siempre alineado a la misma
+ * columna derecha (igual criterio que `lineaConMonto`/`lineaItemColumnas`).
+ */
+function lineaOrdenCierre(numeroOrden: string, hora: string, total: string): string[] {
+  const prefijo = `${`#${numeroOrden}`.padEnd(COL_ORDEN_CIERRE)}${hora.padEnd(COL_HORA_CIERRE)}`
+  const espaciosDisponibles = ANCHO - prefijo.length - total.length
+  if (espaciosDisponibles >= 1) {
+    return [`${prefijo}${' '.repeat(espaciosDisponibles)}${total}`]
+  }
+  const relleno = Math.max(0, ANCHO - total.length)
+  return [prefijo, `${' '.repeat(relleno)}${total}`]
+}
+
+/**
+ * Tiquete de cierre de caja (simulado — no es un documento fiscal, sólo un
+ * resumen impreso para el cajero): encabezado fijo (nombre comercial,
+ * "Kiosko <CAJA_ID>" y fecha/hora del cierre), seguido del área de órdenes
+ * del día en 3 columnas ("# Orden", "Hora", "Total"), generado bajo demanda
+ * desde el panel de administración (botón "Cierre de Caja", ver
+ * `AdminScreen.tsx` -> `PanelCierreCaja`). Se dispara junto con (pero sin
+ * depender de) el envío de `BATCH_SETTLEMENT` al Transaction Manager del BAC
+ * — ver `enviarTransaccionDatafono` en `services/datafono.ts` — el tiquete
+ * se imprime igual sin importar el resultado de ese cierre de lote.
  *
- * La fecha/hora que se imprime es la del momento en que se solicita el
+ * La fecha/hora del encabezado es la del momento en que se solicita el
  * cierre (`new Date()` al generar el ticket), no la de cada orden
  * individual — es el dato que pide el requerimiento del kiosko para saber
- * cuándo se hizo el corte, independientemente de la hora de cada venta.
+ * cuándo se hizo el corte. La hora de cada línea de orden, en cambio, SÍ es
+ * la de esa venta puntual (`venta.fechaHora`, en formato 24 horas para que
+ * quepa en `COL_HORA_CIERRE`), para poder ubicarla en el tiempo dentro del
+ * listado del día.
+ *
+ * El "Kiosko <ID>" del encabezado toma `caja` de la primera orden del día
+ * (todas las órdenes de un mismo cierre vienen del mismo dispositivo físico,
+ * ver `CAJA_ID` en `services/consecutivo.ts`); si por alguna razón no viene
+ * seteado (ventas antiguas en la cola offline, ver `Venta.caja` en
+ * `types/order.ts`), cae a `CAJA_ID` como respaldo.
+ *
+ * Los montos (de cada orden y el total del día) usan `formatMontoFactura`
+ * (prefijo "c " + dos decimales fijos, ver ese helper) en vez de `formatCRC`
+ * — mismo criterio del comprobante del cliente (`ticketCliente`): este
+ * tiquete también se imprime en la estación "Cliente", así que usa el mismo
+ * formato de monto en texto plano, sin el símbolo ₡.
  */
 export function ticketCierreCaja(ordenes: Venta[]): TicketLine[] {
+  const ahora = new Date()
+  const caja = ordenes[0]?.caja ?? CAJA_ID
   const lineas: TicketLine[] = [
-    'CARNES DON FERNANDO',
-    { text: '*** CIERRE DE CAJA ***', bold: true },
-    new Date().toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'medium' }),
-    SEPARADOR,
+    'Carnes Don Fernando',
+    `Kiosko ${caja}`,
+    `${ahora.toLocaleDateString('es-CR', { dateStyle: 'short' })}, ${formatHoraAmPm(ahora)}`,
+    '',
+    ...encabezadoColumnasCierre(),
   ]
 
   let total = 0
   for (const venta of ordenes) {
     total += venta.total
-    lineas.push(...lineaConMonto(`Orden ${venta.id}`, formatCRC(venta.total)))
+    const hora = new Date(venta.fechaHora).toLocaleTimeString('es-CR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+    lineas.push(...lineaOrdenCierre(venta.id, hora, formatMontoFactura(venta.total)))
   }
 
   lineas.push(SEPARADOR)
-  lineas.push(...lineaConMonto('TOTAL:', formatCRC(total)))
-  lineas.push('')
-  lineas.push(`Cantidad de ordenes: ${ordenes.length}`)
+  lineas.push(`Monto total del día: ${formatMontoFactura(total)}`)
   return lineas
+}
+
+/**
+ * Tiquete de cancelación de voucher: se imprime en la estación "Cliente"
+ * cuando el admin anula una orden ya cobrada (botón "Cancelar" en
+ * `AdminScreen.tsx` -> `PanelOrdenesDelDia`), después de que el Transaction
+ * Manager del BAC procese el `VOID` correspondiente (ver
+ * `enviarTransaccionDatafono` en `services/datafono.ts`). Formato fijo de 3
+ * líneas pedido por el requerimiento del kiosko.
+ */
+export function ticketCancelacionVoucher(referenceNumber: string): TicketLine[] {
+  return ['Carnes Don Fernando', 'Cancelación de Voucher', `Referencia: ${referenceNumber}`]
 }
 
 export function generarTickets(venta: Venta): Record<PrinterId, TicketLine[]> {

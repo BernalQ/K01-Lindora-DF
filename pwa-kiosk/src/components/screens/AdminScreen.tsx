@@ -3,11 +3,19 @@ import { CATEGORIES, PRODUCTS, categoryDisplayName, formatCRC, productDisplayNam
 import { actualizarAgotado, actualizarPrecio } from '../../services/catalogOverrides'
 import { obtenerTodasLasVentas } from '../../services/offlineQueue'
 import { enviarTicket } from '../../services/backendPrint'
-import { NOMBRES_IMPRESORA, generarTickets, ticketCierreCaja, type PrinterId, type TicketLine } from '../../services/tickets'
-import TicketPopup from '../ui/TicketPopup'
+import {
+  NOMBRES_IMPRESORA,
+  generarTickets,
+  ticketCancelacionVoucher,
+  ticketCierreCaja,
+  type PrinterId,
+} from '../../services/tickets'
+import { DATAFONO_CONFIG, enviarTransaccionDatafono } from '../../services/datafono'
 import type { Product } from '../../types/catalog'
 import type { VentaEnCola } from '../../types/order'
+import type { ResultadoDatafono } from '../../types/datafono'
 import { useLanguage } from '../../context/useLanguage'
+import DatafonoPopup from '../ui/DatafonoPopup'
 
 interface AdminScreenProps {
   onBack: () => void
@@ -422,6 +430,19 @@ function PanelOrdenesDelDia() {
                   {' · '}
                   {t('admin.ordenesMesa', { mesa: venta.mesa })}
                 </span>
+                {/* Autorización/referencia del datáfono BAC (ver
+                    `Venta.autorizacionDatafono`/`referenciaDatafono` en
+                    types/order.ts): sólo presentes en ventas cobradas con
+                    datáfono, no en facturas/ventas antiguas sin estos campos. */}
+                {(venta.autorizacionDatafono || venta.referenciaDatafono) && (
+                  <span className="text-xs text-wood-400">
+                    {venta.autorizacionDatafono &&
+                      `${t('admin.ordenesAutorizacion')}: ${venta.autorizacionDatafono}`}
+                    {venta.autorizacionDatafono && venta.referenciaDatafono && ' · '}
+                    {venta.referenciaDatafono &&
+                      `${t('admin.ordenesReferencia')}: ${venta.referenciaDatafono}`}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">
@@ -464,6 +485,17 @@ function DetalleOrden({ venta }: { venta: VentaEnCola['venta'] }) {
   })
   const [erroresEnvio, setErroresEnvio] = useState<Partial<Record<PrinterId, string>>>({})
 
+  /** `true` mientras se muestra el diálogo de confirmación antes de anular la orden (ver `cancelarOrden` más abajo). */
+  const [mostrarConfirmacionCancelar, setMostrarConfirmacionCancelar] = useState(false)
+  /** `true` mientras se espera la respuesta del `VOID` enviado al Transaction Manager del BAC. */
+  const [enviandoVoid, setEnviandoVoid] = useState(false)
+  /**
+   * Resultado del `VOID` enviado al datáfono, mostrado en su propio pop-up
+   * de desenlace (aprobado/rechazado) — mismo patrón que `resultadoTm` en
+   * `PanelCierreCaja` más abajo en este archivo.
+   */
+  const [resultadoVoid, setResultadoVoid] = useState<ResultadoDatafono | null>(null)
+
   const imprimir = async (printer: PrinterId) => {
     setEstadoEnvio((prev) => ({ ...prev, [printer]: 'enviando' }))
     setErroresEnvio((prev) => ({ ...prev, [printer]: undefined }))
@@ -477,8 +509,66 @@ function DetalleOrden({ venta }: { venta: VentaEnCola['venta'] }) {
     setEstadoEnvio((prev) => ({ ...prev, [printer]: resultado.simulado ? 'simulado' : 'ok' }))
   }
 
+  // El botón de cancelar sólo tiene sentido en órdenes cobradas con
+  // datáfono (único método de pago del kiosko, ver `types/order.ts`):
+  // anular requiere la autorización/referencia que ese cobro devolvió, no el
+  // `invoice` interno del kiosko (ver `TransaccionDatafonoVoid` en
+  // `types/datafono.ts`). Si por lo que sea una venta no tiene esos campos
+  // (ej. registro antiguo), no se ofrece la acción en vez de mandar un VOID
+  // sin los datos que el TM necesita.
+  const puedeCancelar = Boolean(venta.autorizacionDatafono && venta.referenciaDatafono)
+
+  /**
+   * Anulación (`VOID`) de la orden contra el mismo Transaction Manager del
+   * BAC usado para cobrar (`enviarTransaccionDatafono`, ver
+   * `services/datafono.ts`), identificada por la autorización/referencia
+   * que ese cobro devolvió. Esa función ya registra en la bitácora del
+   * datáfono (`registrarLogDatafono`) tanto el JSON enviado como la
+   * respuesta recibida, así que sólo falta registrar acá el resultado de la
+   * impresión del comprobante de cancelación (ver requerimiento: JSON
+   * enviado al TM, respuesta recibida, resultado de impresión).
+   *
+   * Igual que el cierre de lote en `PanelCierreCaja` (`confirmarCierre`), el
+   * comprobante se imprime siempre al final del flujo, sin importar si el
+   * VOID fue aprobado o rechazado — el pop-up de resultado ya le avisa al
+   * operador cuál fue el desenlace antes de que salga el papel.
+   */
+  const cancelarOrden = async () => {
+    setMostrarConfirmacionCancelar(false)
+    if (!venta.autorizacionDatafono || !venta.referenciaDatafono) return
+
+    setEnviandoVoid(true)
+    setResultadoVoid(null)
+    const resultado = await enviarTransaccionDatafono({
+      transactionType: 'VOID',
+      terminalId: DATAFONO_CONFIG.terminalId,
+      authorizationNumber: venta.autorizacionDatafono,
+      referenceNumber: venta.referenciaDatafono,
+    })
+    setEnviandoVoid(false)
+    setResultadoVoid(resultado)
+
+    const ticket = ticketCancelacionVoucher(venta.referenciaDatafono)
+    const resultadoImpresion = await enviarTicket('cliente', ticket)
+    console.log('[admin:cancelacion] Resultado de impresión del comprobante de cancelación:', resultadoImpresion)
+  }
+
   return (
     <div className="border-t border-wood-100 bg-wood-50 px-4 py-4">
+      {(venta.autorizacionDatafono || venta.referenciaDatafono) && (
+        <div className="mb-4 flex flex-wrap gap-4 text-sm text-wood-700">
+          {venta.autorizacionDatafono && (
+            <span>
+              <span className="font-bold">{t('admin.ordenesAutorizacion')}:</span> {venta.autorizacionDatafono}
+            </span>
+          )}
+          {venta.referenciaDatafono && (
+            <span>
+              <span className="font-bold">{t('admin.ordenesReferencia')}:</span> {venta.referenciaDatafono}
+            </span>
+          )}
+        </div>
+      )}
       <h3 className="mb-2 text-sm font-bold tracking-wide text-wood-500 uppercase">{t('admin.ordenesProductos')}</h3>
       <ul className="mb-4 flex flex-col gap-1">
         {venta.items.map((item, i) => (
@@ -522,6 +612,61 @@ function DetalleOrden({ venta }: { venta: VentaEnCola['venta'] }) {
             </p>
           ),
       )}
+
+      {puedeCancelar && (
+        <div className="mt-4 border-t border-wood-200 pt-4">
+          <button
+            type="button"
+            onClick={() => setMostrarConfirmacionCancelar(true)}
+            disabled={enviandoVoid}
+            className="w-full rounded-xl bg-red-700 px-4 py-2.5 text-sm font-semibold text-cream-50 transition-transform active:scale-95 disabled:opacity-50"
+          >
+            {t('admin.ordenesCancelar')}
+            {enviandoVoid && ` · ${t('admin.ordenesCancelarEnviando')}`}
+          </button>
+        </div>
+      )}
+
+      {mostrarConfirmacionCancelar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl bg-white p-6 text-center shadow-2xl">
+            <h2 className="text-xl font-bold text-wood-900">{t('admin.ordenesCancelarTitulo')}</h2>
+            <p className="text-base text-wood-600">
+              {t('admin.ordenesCancelarMensaje', {
+                orden: venta.id,
+                referencia: venta.referenciaDatafono ?? '',
+              })}
+            </p>
+            <div className="flex w-full flex-col gap-2 pt-1">
+              <button
+                type="button"
+                onClick={cancelarOrden}
+                className="w-full rounded-2xl bg-brand-red py-4 text-base font-bold text-white transition-transform active:scale-98"
+              >
+                {t('admin.ordenesCancelarConfirmar')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMostrarConfirmacionCancelar(false)}
+                className="w-full rounded-2xl bg-wood-100 py-4 text-base font-bold text-wood-800 transition-transform active:scale-98"
+              >
+                {t('admin.ordenesCancelarDescartar')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Desenlace del VOID enviado al Transaction Manager del BAC (ver
+          `cancelarOrden` arriba) — se reusa `DatafonoPopup` (mismo
+          componente del flujo de cobro en `PaymentScreen`) en vez de un
+          pop-up manual: así este flujo también ofrece "Reintentar" cuando
+          `resultado.permiteReintentar` (ej. timeout/error de red), que antes
+          se perdía con el pop-up simplificado verde/rojo que sólo tenía
+          "Cerrar" (ver hallazgo de auditoría). */}
+      {resultadoVoid && (
+        <DatafonoPopup resultado={resultadoVoid} onReintentar={cancelarOrden} onCerrar={() => setResultadoVoid(null)} />
+      )}
     </div>
   )
 }
@@ -536,9 +681,17 @@ function PanelCierreCaja() {
   const [ventas, setVentas] = useState<VentaEnCola[] | null>(null)
   const [estado, setEstado] = useState<EstadoImpresion>(null)
   const [errorEnvio, setErrorEnvio] = useState<string | null>(null)
-  const [vistaPrevia, setVistaPrevia] = useState<TicketLine[] | null>(null)
   /** `true` mientras se muestra el diálogo de confirmación previo a enviar el cierre (ver hallazgo de auditoría — antes se enviaba con un solo tap, sin confirmar). */
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false)
+  /** `true` mientras se espera la respuesta del `BATCH_SETTLEMENT` enviado al Transaction Manager del BAC (ver `ejecutarCierre` más abajo). */
+  const [enviandoTm, setEnviandoTm] = useState(false)
+  /**
+   * Resultado del cierre de lote (`BATCH_SETTLEMENT`) enviado al datáfono.
+   * No-nulo mientras se muestra el pop-up de desenlace de ese envío
+   * (aprobado/rechazado) — independiente del estado de la impresión del
+   * tiquete (`estado`/`errorEnvio` arriba), que no tiene pop-up propio.
+   */
+  const [resultadoTm, setResultadoTm] = useState<ResultadoDatafono | null>(null)
 
   useEffect(() => {
     obtenerTodasLasVentas().then((todas) => {
@@ -579,9 +732,38 @@ function PanelCierreCaja() {
     setEstado(resultado.simulado ? 'simulado' : 'ok')
   }
 
-  const confirmarCierre = () => {
+  /**
+   * Cierre de lote (`BATCH_SETTLEMENT`) contra el mismo Transaction Manager
+   * del BAC usado para cobrar (`enviarTransaccionDatafono`, ver
+   * `services/datafono.ts`) — esa función ya registra el JSON enviado y la
+   * respuesta recibida en la bitácora del datáfono
+   * (`registrarLogDatafono`/`obtenerLogsDatafono`), así que no hace falta
+   * loggear nada aparte acá. El resultado (aprobado/rechazado, con
+   * `responseCodeDescription` cuando aplica) se guarda en `resultadoTm` para
+   * mostrarse en un pop-up propio, distinto del de impresión.
+   */
+  const enviarCierreAlDatafono = async () => {
+    setEnviandoTm(true)
+    setResultadoTm(null)
+    const resultado = await enviarTransaccionDatafono({
+      transactionType: 'BATCH_SETTLEMENT',
+      terminalId: DATAFONO_CONFIG.terminalId,
+    })
+    setEnviandoTm(false)
+    setResultadoTm(resultado)
+  }
+
+  /**
+   * "Sí, generar cierre" del diálogo de confirmación: dispara el cierre de
+   * lote al datáfono y, SIN IMPORTAR el resultado de esa llamada (aprobado,
+   * rechazado, o un error de comunicación), genera e imprime el tiquete de
+   * cierre con todas las órdenes del día (ver requerimiento — ambos pasos
+   * son independientes entre sí).
+   */
+  const confirmarCierre = async () => {
     setMostrarConfirmacion(false)
-    imprimirCierre()
+    await enviarCierreAlDatafono()
+    await imprimirCierre()
   }
 
   return (
@@ -609,38 +791,22 @@ function PanelCierreCaja() {
       <div className="flex gap-3">
         <button
           type="button"
-          onClick={() => setVistaPrevia(ticketCierreCaja(ventas.map((v) => v.venta)))}
-          disabled={ventas.length === 0}
-          className="flex-1 rounded-2xl bg-wood-100 py-4 text-base font-bold text-wood-800 transition-transform active:scale-98 disabled:opacity-50"
-        >
-          {t('admin.cierreVistaPrevia')}
-        </button>
-        <button
-          type="button"
           onClick={() => setMostrarConfirmacion(true)}
-          disabled={estado === 'enviando' || ventas.length === 0}
+          disabled={enviandoTm || estado === 'enviando' || ventas.length === 0}
           className={`flex-1 rounded-2xl py-4 text-base font-bold text-white transition-transform active:scale-98 disabled:opacity-50 ${
             estado === 'error' ? 'bg-red-700' : 'bg-brand-red'
           }`}
         >
           {t('admin.cierreImprimir')}
-          {estado === 'enviando' && ` · ${t('admin.ordenesEnviando')}`}
-          {estado === 'ok' && ` · ${t('admin.ordenesEnviado')}`}
-          {estado === 'simulado' && ` · ${t('admin.ordenesSimulado')}`}
-          {estado === 'error' && ` · ${t('admin.ordenesError')}`}
+          {enviandoTm && ` · ${t('admin.cierreEnviandoTm')}`}
+          {!enviandoTm && estado === 'enviando' && ` · ${t('admin.ordenesEnviando')}`}
+          {!enviandoTm && estado === 'ok' && ` · ${t('admin.ordenesEnviado')}`}
+          {!enviandoTm && estado === 'simulado' && ` · ${t('admin.ordenesSimulado')}`}
+          {!enviandoTm && estado === 'error' && ` · ${t('admin.ordenesError')}`}
         </button>
       </div>
 
       {errorEnvio && <p className="text-center text-sm font-semibold text-red-700">{errorEnvio}</p>}
-
-      {vistaPrevia && (
-        <TicketPopup
-          titulo={t('admin.cierreTitle')}
-          secciones={[{ titulo: NOMBRES_IMPRESORA.cliente, lineas: vistaPrevia }]}
-          textoBoton={t('common.cerrar')}
-          onCerrar={() => setVistaPrevia(null)}
-        />
-      )}
 
       {mostrarConfirmacion && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -665,6 +831,20 @@ function PanelCierreCaja() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Desenlace del cierre de lote (`BATCH_SETTLEMENT`) enviado al
+          Transaction Manager del BAC (ver `enviarCierreAlDatafono` arriba) —
+          se reusa `DatafonoPopup` (mismo componente del flujo de cobro en
+          `PaymentScreen` y del VOID en `PanelOrdenesDelDia` arriba) en vez
+          de un pop-up manual: ofrece "Reintentar" (sólo reenvía el
+          `BATCH_SETTLEMENT`, no vuelve a imprimir el tiquete — ya se imprime
+          una sola vez en `confirmarCierre`) cuando
+          `resultado.permiteReintentar` (ver hallazgo de auditoría).
+          Independiente del pop-up de confirmación y del estado de impresión
+          (que no tiene pop-up propio). */}
+      {resultadoTm && (
+        <DatafonoPopup resultado={resultadoTm} onReintentar={enviarCierreAlDatafono} onCerrar={() => setResultadoTm(null)} />
       )}
     </div>
   )

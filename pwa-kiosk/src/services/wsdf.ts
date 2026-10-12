@@ -23,8 +23,13 @@ import type {
  * `DATAFONO_CONFIG.endpoint` en `services/datafono.ts`).
  */
 export const WSDF_CONFIG = {
-  /** ID de tienda asignado por Codisa a este kiosko. */
-  idTienda: '22',
+  /**
+   * ID de tienda asignado por Codisa a este kiosko. Configurable vía
+   * `VITE_CODISA_ID_TIENDA` (ver `.env.example`) para desplegar el mismo
+   * build en otro kiosko/tienda sin recompilar con un valor distinto
+   * hardcodeado (ver hallazgo de auditoría).
+   */
+  idTienda: import.meta.env.VITE_CODISA_ID_TIENDA || '22',
   /** ID de cliente genérico para ventas sin factura electrónica (consumidor final / anónimo). */
   idClienteAnonimo: '1',
   endpointCliente: 'https://10.0.1.24/kiosko/df_api.php?action=cliente',

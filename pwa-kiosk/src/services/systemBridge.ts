@@ -1,3 +1,5 @@
+import { encabezadoTokenKiosko } from './kioskToken'
+
 const PRINT_BRIDGE_URL = 'http://localhost:4000'
 
 export interface ResultadoSalirKiosko {
@@ -19,7 +21,10 @@ export interface ResultadoSalirKiosko {
  */
 export async function salirDeKiosko(): Promise<ResultadoSalirKiosko> {
   try {
-    const res = await fetch(`${PRINT_BRIDGE_URL}/system/exit-kiosk`, { method: 'POST' })
+    const res = await fetch(`${PRINT_BRIDGE_URL}/system/exit-kiosk`, {
+      method: 'POST',
+      headers: encabezadoTokenKiosko(),
+    })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
       throw new Error(data.error ?? `Error HTTP ${res.status}`)

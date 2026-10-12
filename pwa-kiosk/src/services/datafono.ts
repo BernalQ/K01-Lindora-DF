@@ -25,8 +25,14 @@ import type {
  * del kiosko; no hay certificado involucrado.
  */
 export const DATAFONO_CONFIG = {
-  /** ID fijo del terminal físico conectado a este kiosko (único terminal por ahora). */
-  terminalId: 'EMVUFID1',
+  /**
+   * ID fijo del terminal físico conectado a este kiosko (único terminal por
+   * ahora). Configurable vía `VITE_DATAFONO_TERMINAL_ID` (ver `.env.example`
+   * y `services/redConfig.ts` para el mismo patrón aplicado a las IPs) para
+   * desplegar el mismo build en un kiosko con otro terminal sin recompilar
+   * con un valor distinto hardcodeado.
+   */
+  terminalId: import.meta.env.VITE_DATAFONO_TERMINAL_ID || 'EMVUFID1',
   endpoint: `http://${RED_CONFIG.ipGateway}:2493`,
 }
 
@@ -188,32 +194,26 @@ export function formatMontoDatafono(monto: number): string {
 
 /**
  * Convierte el consecutivo legible del kiosko (`generarConsecutivo()`, ej.
- * "01-2026-10-00007", 17 caracteres con guiones — ver `services/consecutivo.ts`)
- * en un `invoice` compatible con Transaction Manager.
+ * "000000007", 9 dígitos sin guiones — ver `services/consecutivo.ts`) en un
+ * `invoice` compatible con Transaction Manager.
  *
- * Hallazgo de auditoría: antes se enviaba ese mismo string de 17 caracteres
- * tal cual como `invoice`, que es justo el campo que Transaction Manager
- * rechazaba con "Parámetros inválidos en el request" (categoría
- * `rechazo-generico`) — BAC exige un string puramente numérico de máximo 12
- * caracteres (ver ejemplo documentado "112234"), y el consecutivo del
- * kiosko usa guiones y un año de 4 dígitos porque esa legibilidad sí importa
- * en el tiquete impreso y en Codisa (no se toca `generarConsecutivo` ni su
- * uso en Codisa/tiquete, sólo se deriva de él un `invoice` corto para esta
- * llamada puntual).
- *
- * Se arma concatenando puntoVenta + año (2 dígitos) + mes + consecutivo de 5
- * dígitos, en ese orden, preservando la misma unicidad por mes/punto de
- * venta que ya tenía el consecutivo original (sólo se pierden los dos
- * dígitos de siglo del año, irrelevante en la práctica: "01" + "26" + "10" +
- * "00007" = "01261000007", 11 caracteres, siempre numérico). Como
+ * Hallazgo de auditoría (esquema anterior con guiones, ej.
+ * "01-2026-10-00007"): se enviaba ese string tal cual como `invoice`, que es
+ * justo el campo que Transaction Manager rechazaba con "Parámetros
+ * inválidos en el request" (categoría `rechazo-generico`) — BAC exige un
+ * string puramente numérico de máximo 12 caracteres (ver ejemplo
+ * documentado "112234"). El esquema actual ya es puramente numérico de 9
+ * dígitos, así que no necesita transformación: cae directo en la rama de
+ * respaldo (quita caracteres no numéricos — ninguno en este caso — y toma
+ * los últimos 12), que deja pasar el consecutivo tal cual. Como
  * `obtenerNumeroFactura()` en `PaymentScreen` cachea el consecutivo en un
  * ref y lo reutiliza en cada reintento de la MISMA orden, un reintento
  * manda el mismo `invoice` (correcto: sigue siendo la misma transacción) y
  * una orden nueva siempre produce uno distinto.
  *
- * Si el formato no calza con el esperado (ej. cambia `generarConsecutivo` a
- * futuro), se degrada a tomar sólo los dígitos del string original (sin
- * guiones) y quedarse con los últimos 12.
+ * La rama con guiones (`match`) se conserva por compatibilidad con ventas ya
+ * encoladas con el esquema anterior (ej. en `offlineQueue` antes de este
+ * cambio) que pudieran reintentarse tras una actualización del kiosko.
  */
 export function formatInvoiceDatafono(numeroFacturaKiosko: string): string {
   const match = /^(\d+)-(\d{4})-(\d{2})-(\d+)$/.exec(numeroFacturaKiosko.trim())
