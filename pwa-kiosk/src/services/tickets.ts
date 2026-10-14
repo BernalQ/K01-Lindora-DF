@@ -386,20 +386,24 @@ function lineasCarniceria(items: OrderItem[]): TicketLine[] {
 
 export function ticketCarniceria(venta: Venta): TicketLine[] {
   return [
+    // 4 renglones en blanco totalmente en la parte superior del tiquete,
+    // antes del header (ver requerimiento vigente: "deben estar totalmente
+    // en la parte superior del tiquete, antes del header"). Antes iban
+    // justo después de `FIN_ENCABEZADO`, pegados al inicio del listado de
+    // productos; ahora el listado empieza inmediatamente después del
+    // header, sin espacio extra entre ambos. El listado que sigue ya se
+    // imprime alineado a la izquierda por el propio `FIN_ENCABEZADO`
+    // (ESC a 0, ver `construirBufferTicket` en `services/escpos.ts`), así
+    // que no hace falta ningún otro cambio para cumplir "alineación
+    // completamente a la izquierda".
+    '',
+    '',
+    '',
+    '',
     'CARNES DON FERNANDO',
     '*** CARNICERIA ***',
     ...encabezado(venta),
     FIN_ENCABEZADO,
-    // 4 renglones en blanco antes de empezar a imprimir productos (ver
-    // requerimiento); el listado que sigue ya se imprime alineado a la
-    // izquierda por el propio `FIN_ENCABEZADO` (ESC a 0, ver
-    // `construirBufferTicket` en `services/escpos.ts`), así que no hace
-    // falta ningún otro cambio para cumplir "alineación completamente a la
-    // izquierda".
-    '',
-    '',
-    '',
-    '',
     ...lineasCarniceria(venta.items),
     SEPARADOR,
   ]
@@ -408,18 +412,18 @@ export function ticketCarniceria(venta: Venta): TicketLine[] {
 /**
  * Envuelve un texto en un `TicketLine`, aplicando primero el margen
  * izquierdo mínimo de `agregarItem` (sin monto, por lo que siempre devuelve
- * una sola línea). Si `agrandar` es `true` se marca como `medium` (doble
- * alto, sin doble ancho, en la impresión térmica, ver `agregarLinea` en
- * `services/escpos.ts`); si no, se devuelve el texto plano (tamaño normal).
- * Usado en el ticket de parrilla/cocina (ver `lineasItemCocina`). Antes se
- * marcaba `big` (doble ancho + doble alto, requerimiento anterior de
- * aumentar la letra de los cortes de parrilla); requerimiento de negocio
- * vigente pide una letra "un poco más pequeña" que esa, de ahí el cambio a
- * `medium`.
+ * una sola línea) y marcándolo como `medium` (doble alto, sin doble ancho,
+ * en la impresión térmica, ver `agregarLinea` en `services/escpos.ts`).
+ * Usado en el ticket de parrilla/cocina (ver `lineasItemCocina`) para TODAS
+ * las líneas de producto, sin importar la sección (Entradas, Parrilla,
+ * Bebidas, Guarniciones sueltas, Sobremesa) — requerimiento de negocio
+ * vigente: "usar el mismo tamaño de letra de Parrilla en el resto de
+ * secciones". Antes sólo los cortes de la sección "Parrilla" se marcaban así
+ * (`agrandar: boolean` condicionaba el tamaño); ese parámetro ya no hace
+ * falta porque ahora el tamaño es el mismo para cualquier item del ticket.
  */
-function conTamano(texto: string, agrandar: boolean): TicketLine {
-  const linea = agregarItem(texto)[0]
-  return agrandar ? { text: linea, medium: true } : linea
+function conTamano(texto: string): TicketLine {
+  return { text: agregarItem(texto)[0], medium: true }
 }
 
 /**
@@ -437,24 +441,27 @@ function conTamano(texto: string, agrandar: boolean): TicketLine {
  * etiquetas. El resto de items conserva las etiquetas ("Termino:",
  * "Guarniciones:") para no perder claridad fuera de ese contexto fijo.
  *
- * Sólo los items de la categoría "parrilla" (nombre/cantidad, corte, término
- * y guarniciones) se marcan como `medium` (letra más grande que la normal,
- * sin llegar al tamaño `big`, ver `conTamano`). El resto de items del ticket
- * de cocina (entradas, bebidas) se imprime a tamaño normal.
+ * Todos los items del ticket de cocina (entradas, parrilla, bebidas,
+ * guarniciones sueltas, sobremesa) se marcan como `medium` (letra más
+ * grande que la normal, sin llegar al tamaño `big`, ver `conTamano`) —
+ * requerimiento vigente: "usar el mismo tamaño de letra de Parrilla en el
+ * resto de secciones". `esParrilla` ya NO decide el tamaño de letra; se
+ * sigue usando únicamente para decidir si el término/guarniciones se
+ * imprimen con o sin título (ver comentario arriba).
  */
 function lineasItemCocina(item: OrderItem): TicketLine[] {
   const lineas: TicketLine[] = []
   const esParrilla = categoriaDe(item) === 'parrilla'
   const opcionPropia = opcionParaMostrar(item.productId, item.opcion)
   const nombreLinea = `${item.quantity}x ${nombreConVariante(item)}${opcionPropia ? ` * ${opcionPropia}` : ''}`
-  lineas.push(conTamano(nombreLinea, esParrilla))
-  if (item.corte) lineas.push(conTamano(`  Corte: ${item.corte}`, esParrilla))
+  lineas.push(conTamano(nombreLinea))
+  if (item.corte) lineas.push(conTamano(`  Corte: ${item.corte}`))
   const termino = terminoTexto(item)
-  if (termino) lineas.push(conTamano(esParrilla ? `  ${termino}` : `  Termino: ${termino}`, esParrilla))
+  if (termino) lineas.push(conTamano(esParrilla ? `  ${termino}` : `  Termino: ${termino}`))
   const guarniciones = guarnicionesTexto(item, { compacto: true, conTitulo: !esParrilla })
-  for (const linea of guarniciones) lineas.push(conTamano(linea, esParrilla))
+  for (const linea of guarniciones) lineas.push(conTamano(linea))
   const extras = extrasTexto(item)
-  if (extras) lineas.push(conTamano(extras, esParrilla))
+  if (extras) lineas.push(conTamano(extras))
   return lineas
 }
 
@@ -508,17 +515,17 @@ function agruparParaCocina(items: OrderItem[]): TicketLine[] {
 
 export function ticketRestaurante(venta: Venta): TicketLine[] {
   const lineas: TicketLine[] = [
+    // 4 renglones en blanco totalmente en la parte superior del tiquete,
+    // antes del header (mismo criterio que `ticketCarniceria`, ver
+    // requerimiento vigente).
+    '',
+    '',
+    '',
+    '',
     'CARNES DON FERNANDO',
     '*** PARRILLA / COCINA ***',
     ...encabezado(venta),
     FIN_ENCABEZADO,
-    // 4 renglones en blanco antes de empezar a imprimir productos (ver
-    // requerimiento); el listado ya se imprime alineado a la izquierda por
-    // el propio `FIN_ENCABEZADO`.
-    '',
-    '',
-    '',
-    '',
     ...agruparParaCocina(venta.items),
   ]
   lineas.push(SEPARADOR)
@@ -534,18 +541,19 @@ export function ticketRestaurante(venta: Venta): TicketLine[] {
 export function ticketConsolidadoCarniceria(mesaId: string, ordenes: Venta[]): TicketLine[] {
   const items = ordenes.flatMap((v) => v.items)
   return [
+    // 4 renglones en blanco totalmente en la parte superior del tiquete,
+    // antes del header (mismo criterio que `ticketCarniceria`, ver
+    // requerimiento vigente).
+    '',
+    '',
+    '',
+    '',
     'CARNES DON FERNANDO',
     '*** CARNICERIA (CONSOLIDADO) ***',
     { text: mesaId.toUpperCase(), big: true, bold: true },
     formatFechaHoraAmPm(new Date()),
     '',
     FIN_ENCABEZADO,
-    // 4 renglones en blanco antes de empezar a imprimir productos (ver
-    // requerimiento, mismo criterio que `ticketCarniceria`).
-    '',
-    '',
-    '',
-    '',
     ...lineasCarniceria(items),
     SEPARADOR,
   ]
@@ -559,18 +567,19 @@ export function ticketConsolidadoCarniceria(mesaId: string, ordenes: Venta[]): T
 export function ticketConsolidadoRestaurante(mesaId: string, ordenes: Venta[]): TicketLine[] {
   const items = ordenes.flatMap((v) => v.items)
   const lineas: TicketLine[] = [
+    // 4 renglones en blanco totalmente en la parte superior del tiquete,
+    // antes del header (mismo criterio que `ticketRestaurante`, ver
+    // requerimiento vigente).
+    '',
+    '',
+    '',
+    '',
     'CARNES DON FERNANDO',
     '*** PARRILLA / COCINA (CONSOLIDADO) ***',
     { text: mesaId.toUpperCase(), big: true, bold: true },
     formatFechaHoraAmPm(new Date()),
     '',
     FIN_ENCABEZADO,
-    // 4 renglones en blanco antes de empezar a imprimir productos (ver
-    // requerimiento, mismo criterio que `ticketRestaurante`).
-    '',
-    '',
-    '',
-    '',
     ...agruparParaCocina(items),
   ]
   lineas.push(SEPARADOR)
