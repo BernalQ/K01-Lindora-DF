@@ -206,6 +206,7 @@ const dictionaries = {
     'admin.ordenesCancelarMensaje': '¿Desea cancelar la orden #{{orden}} con referencia {{referencia}}?',
     'admin.ordenesCancelarConfirmar': 'Confirmar',
     'admin.ordenesCancelarDescartar': 'Cancelar',
+    'admin.ordenesCancelarCompletada': '✔ Cancelación completada',
     'admin.cargando': 'Cargando…',
     'admin.cierreTitle': 'Cierre de Caja',
     'admin.cierreTotal': 'Total del día',
@@ -215,6 +216,7 @@ const dictionaries = {
     'admin.cierreConfirmarSi': 'Sí, generar cierre',
     'admin.cierreConfirmarNo': 'Cancelar',
     'admin.cierreEnviandoTm': 'Enviando cierre al datáfono…',
+    'admin.cierreCompletado': '✔ Cierre de caja completado correctamente',
 
     'mesaSetup.pregunta': 'La misma mesa va a tener diferentes ordenes pagadas por separado?',
     'mesaSetup.si': 'Sí',
@@ -471,6 +473,7 @@ const dictionaries = {
     'admin.ordenesCancelarMensaje': 'Do you want to cancel order #{{orden}} with reference {{referencia}}?',
     'admin.ordenesCancelarConfirmar': 'Confirm',
     'admin.ordenesCancelarDescartar': 'Cancel',
+    'admin.ordenesCancelarCompletada': '✔ Cancellation completed',
     'admin.cargando': 'Loading…',
     'admin.cierreTitle': 'Cash Register Closing',
     'admin.cierreTotal': "Day's total",
@@ -480,6 +483,7 @@ const dictionaries = {
     'admin.cierreConfirmarSi': 'Yes, generate closing',
     'admin.cierreConfirmarNo': 'Cancel',
     'admin.cierreEnviandoTm': 'Sending closing to card reader…',
+    'admin.cierreCompletado': '✔ Cash register closing completed successfully',
 
     'mesaSetup.pregunta': 'The same table will have different orders paid separately?',
     'mesaSetup.si': 'Yes',

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { formatCRC, nombreParaCodigoCodisa } from '../../data/catalog'
 import { useLanguage } from '../../context/useLanguage'
+import { formatFechaHoraAmPm } from '../../services/tickets'
 import { WSDF_CONFIG } from '../../services/wsdf'
 import type { Venta } from '../../types/order'
 import type { ValidacionWsDf, WsDfPayload } from '../../types/wsdf'
@@ -50,10 +51,7 @@ export default function WsDfPopup({
     onCancelar()
   }
 
-  const fechaTexto = new Date(venta.fechaHora).toLocaleString('es-CR', {
-    dateStyle: 'short',
-    timeStyle: 'medium',
-  })
+  const fechaTexto = formatFechaHoraAmPm(new Date(venta.fechaHora), true)
 
   const clienteTexto = venta.cliente
     ? `${venta.cliente.nombre} (${venta.cliente.cedula})`

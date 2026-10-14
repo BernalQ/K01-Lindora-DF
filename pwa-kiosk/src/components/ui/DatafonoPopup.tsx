@@ -8,6 +8,16 @@ interface DatafonoPopupProps {
   /** Sólo se llama si `resultado.permiteReintentar` (el botón no se renderiza si no aplica). */
   onReintentar: () => void
   onCerrar: () => void
+  /**
+   * Título alternativo para `resultado.categoria === 'aprobada'`, usado por
+   * flujos distintos al cobro con datáfono que reutilizan este mismo
+   * pop-up (ej. la anulación/VOID de una orden en `AdminScreen.tsx`, que
+   * pide mostrar "✔ Cancelación completada" en vez del genérico "Transacción
+   * exitosa" de `datafono.tituloAprobada`). Si no se indica, se usa el título
+   * genérico de siempre — el resto de categorías (denegada/error/etc.) no
+   * cambian, ya muestran `resultado.mensaje` con el detalle real del TM.
+   */
+  tituloAprobadaOverride?: TranslationKey
 }
 
 /**
@@ -54,9 +64,16 @@ function colorPorResultado(resultado: ResultadoDatafono): { fondo: string; trazo
  * `PaymentScreen.handleCobrar`) — no se reutiliza para factura/WS DF/tickets,
  * que ya tienen sus propios pop-ups.
  */
-export default function DatafonoPopup({ resultado, onReintentar, onCerrar }: DatafonoPopupProps) {
+export default function DatafonoPopup({
+  resultado,
+  onReintentar,
+  onCerrar,
+  tituloAprobadaOverride,
+}: DatafonoPopupProps) {
   const { t } = useLanguage()
   const apariencia = APARIENCIA[resultado.categoria]
+  const tituloKey =
+    resultado.categoria === 'aprobada' && tituloAprobadaOverride ? tituloAprobadaOverride : apariencia.tituloKey
   const color = colorPorResultado(resultado)
   // Un timeout es el único caso donde la petición sí pudo haber llegado al
   // terminal físico (a diferencia de 'error-red', que normalmente falla
@@ -136,7 +153,7 @@ export default function DatafonoPopup({ resultado, onReintentar, onCerrar }: Dat
           )}
         </div>
 
-        <h2 className="text-xl font-bold text-wood-900">{t(apariencia.tituloKey)}</h2>
+        <h2 className="text-xl font-bold text-wood-900">{t(tituloKey)}</h2>
         <p className="text-base text-wood-600">{resultado.mensaje}</p>
 
         {(resultado.authorizationNumber || resultado.referenceNumber) && (

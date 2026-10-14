@@ -313,7 +313,7 @@ function encabezado(venta: Venta): TicketLine[] {
   return [
     { text: `Orden: ${venta.id}`, bold: true },
     `Mesa: ${venta.mesa}`,
-    fecha.toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' }),
+    formatFechaHoraAmPm(fecha),
     '',
   ]
 }
@@ -511,7 +511,7 @@ export function ticketConsolidadoCarniceria(mesaId: string, ordenes: Venta[]): T
     'CARNES DON FERNANDO',
     '*** CARNICERIA (CONSOLIDADO) ***',
     { text: mesaId.toUpperCase(), big: true, bold: true },
-    new Date().toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' }),
+    formatFechaHoraAmPm(new Date()),
     '',
     FIN_ENCABEZADO,
     ...lineasCarniceria(items),
@@ -530,7 +530,7 @@ export function ticketConsolidadoRestaurante(mesaId: string, ordenes: Venta[]): 
     'CARNES DON FERNANDO',
     '*** PARRILLA / COCINA (CONSOLIDADO) ***',
     { text: mesaId.toUpperCase(), big: true, bold: true },
-    new Date().toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' }),
+    formatFechaHoraAmPm(new Date()),
     '',
     FIN_ENCABEZADO,
     ...agruparParaCocina(items),
@@ -564,7 +564,7 @@ function encabezadoCliente(venta: Venta): TicketLine[] {
     '',
     { text: `Factura de caja ${venta.id}`, bold: true },
     `Caja: ${venta.caja ?? CAJA_ID}`,
-    `Fecha: ${fecha.toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' })}`,
+    `Fecha: ${formatFechaHoraAmPm(fecha)}`,
     `Mesa: ${venta.mesa}`,
     SEPARADOR,
     FIN_ENCABEZADO,
@@ -638,51 +638,55 @@ export function ticketCliente(venta: Venta): TicketLine[] {
 }
 
 /**
- * Ancho de la columna "# Orden" del área de órdenes del tiquete de cierre de
- * caja (ver `ticketCierreCaja`): suficiente para "#" + el consecutivo de 9
- * dígitos (ver `services/consecutivo.ts`) más un espacio de separación.
- */
-const COL_ORDEN_CIERRE = 11
-
-/** Ancho de la columna "Hora" del tiquete de cierre de caja: "HH:MM" (formato 24 horas, ver `lineaOrdenCierre`) más un espacio. */
-const COL_HORA_CIERRE = 7
-
-/**
- * Arma el encabezado de 3 columnas ("# Orden", "Hora", "Total") del área de
- * órdenes del tiquete de cierre de caja, seguido de la línea punteada
- * separadora (`SEPARADOR`). "Total" queda alineado a la misma columna
- * derecha que los montos de `lineaOrdenCierre`.
- */
-function encabezadoColumnasCierre(): TicketLine[] {
-  const prefijo = `${'# Orden'.padEnd(COL_ORDEN_CIERRE)}${'Hora'.padEnd(COL_HORA_CIERRE)}`
-  const espacios = Math.max(1, ANCHO - prefijo.length - 'Total'.length)
-  return [`${prefijo}${' '.repeat(espacios)}Total`, SEPARADOR]
-}
-
-/**
  * Formatea la hora de 12 horas con sufijo "am"/"pm" pegado (sin punto ni
- * espacio interno, ej. `3:12:27 pm`), a diferencia de `toLocaleString('es-CR', ...)`
- * que en este entorno devuelve "a. m."/"p. m." (con puntos y espacio
- * interno) — formato pedido explícitamente para la línea de fecha/hora del
- * encabezado del tiquete de cierre de caja (ver `ticketCierreCaja`).
+ * espacio interno, ej. `3:12:27 pm` o, sin segundos, `3:12 pm`), a diferencia
+ * de `toLocaleString('es-CR', ...)` que en este entorno devuelve "a. m."/
+ * "p. m." (con puntos y espacio interno). Requerimiento de negocio vigente:
+ * toda hora visible en la PWA (tiquetes impresos y pantallas del
+ * kiosko/admin) debe usar este formato pegado, no sólo el tiquete de cierre
+ * de caja donde se usó por primera vez — ver usos de `formatHoraAmPm`/
+ * `formatFechaHoraAmPm` en `AdminScreen.tsx` y `WsDfPopup.tsx`.
+ *
+ * `incluirSegundos` (default `true`) permite omitir los segundos cuando el
+ * lugar que llama a esta función no los necesita (ej. la lista de órdenes de
+ * `AdminScreen`, que sólo mostraba HH:MM antes de este cambio).
  */
-function formatHoraAmPm(fecha: Date): string {
+export function formatHoraAmPm(fecha: Date, incluirSegundos = true): string {
   const minutos = String(fecha.getMinutes()).padStart(2, '0')
-  const segundos = String(fecha.getSeconds()).padStart(2, '0')
   const sufijo = fecha.getHours() >= 12 ? 'pm' : 'am'
   const horas12 = fecha.getHours() % 12 || 12
+  if (!incluirSegundos) return `${horas12}:${minutos} ${sufijo}`
+  const segundos = String(fecha.getSeconds()).padStart(2, '0')
   return `${horas12}:${minutos}:${segundos} ${sufijo}`
 }
 
 /**
- * Línea de una orden en 3 columnas para el tiquete de cierre de caja:
- * "# Orden" (`#<consecutivo>`), "Hora" y "Total" (alineado a la derecha). Si
- * no hay espacio para las 3 columnas en una sola línea (ej. un monto muy
- * grande), el total baja a su propia línea, siempre alineado a la misma
- * columna derecha (igual criterio que `lineaConMonto`/`lineaItemColumnas`).
+ * Combina fecha corta (`dateStyle: 'short'`, ej. "14/10/26") con
+ * `formatHoraAmPm` (hora con am/pm pegado) — mismo resultado visual que antes
+ * daba `toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' | 'medium' })`,
+ * pero sin el "a. m."/"p. m." con punto y espacio. Usado en los encabezados
+ * de los tiquetes de orden/consolidado/cliente (ver `encabezado`,
+ * `ticketConsolidadoCarniceria`, `ticketConsolidadoRestaurante`,
+ * `encabezadoCliente` abajo) y en el pop-up de verificación de Codisa (ver
+ * `WsDfPopup.tsx`).
+ */
+export function formatFechaHoraAmPm(fecha: Date, incluirSegundos = false): string {
+  return `${fecha.toLocaleDateString('es-CR', { dateStyle: 'short' })}, ${formatHoraAmPm(fecha, incluirSegundos)}`
+}
+
+/**
+ * Línea de una orden del tiquete de cierre de caja: "Orden #<consecutivo>
+ * <hora>" seguido del monto, alineado a la columna derecha (igual criterio
+ * que `lineaConMonto`/`lineaItemColumnas`). Si no cabe en una sola línea (el
+ * consecutivo de 9 dígitos, ver `services/consecutivo.ts`, casi siempre la
+ * agota en el ancho de 32 columnas de la impresora térmica), el monto baja a
+ * su propia línea, siempre alineado a esa misma columna derecha — sin
+ * encabezado de columnas antes del listado (requerimiento: "Línea 4 en
+ * adelante: listar todas las órdenes del día" directamente, ver
+ * `ticketCierreCaja`).
  */
 function lineaOrdenCierre(numeroOrden: string, hora: string, total: string): string[] {
-  const prefijo = `${`#${numeroOrden}`.padEnd(COL_ORDEN_CIERRE)}${hora.padEnd(COL_HORA_CIERRE)}`
+  const prefijo = `Orden #${numeroOrden} ${hora}`
   const espaciosDisponibles = ANCHO - prefijo.length - total.length
   if (espaciosDisponibles >= 1) {
     return [`${prefijo}${' '.repeat(espaciosDisponibles)}${total}`]
@@ -693,10 +697,13 @@ function lineaOrdenCierre(numeroOrden: string, hora: string, total: string): str
 
 /**
  * Tiquete de cierre de caja (simulado — no es un documento fiscal, sólo un
- * resumen impreso para el cajero): encabezado fijo (nombre comercial,
- * "Kiosko <CAJA_ID>" y fecha/hora del cierre), seguido del área de órdenes
- * del día en 3 columnas ("# Orden", "Hora", "Total"), generado bajo demanda
- * desde el panel de administración (botón "Cierre de Caja", ver
+ * resumen impreso para el cajero): línea 1 "Cierre de datáfono - Carnes Don
+ * Fernando", línea 2 "Kiosko <CAJA_ID>" (identifica el dispositivo físico
+ * cuando hay más de un kiosko, ver `CAJA_ID` en `services/consecutivo.ts`),
+ * línea 3 fecha/hora del cierre, línea 4 en blanco y desde la línea 5 el
+ * listado de órdenes del día ("Orden #<consecutivo> <hora>" + monto a la
+ * derecha, ver `lineaOrdenCierre`), sin encabezado de columnas — generado
+ * bajo demanda desde el panel de administración (botón "Cierre de Caja", ver
  * `AdminScreen.tsx` -> `PanelCierreCaja`). Se dispara junto con (pero sin
  * depender de) el envío de `BATCH_SETTLEMENT` al Transaction Manager del BAC
  * — ver `enviarTransaccionDatafono` en `services/datafono.ts` — el tiquete
@@ -706,31 +713,30 @@ function lineaOrdenCierre(numeroOrden: string, hora: string, total: string): str
  * cierre (`new Date()` al generar el ticket), no la de cada orden
  * individual — es el dato que pide el requerimiento del kiosko para saber
  * cuándo se hizo el corte. La hora de cada línea de orden, en cambio, SÍ es
- * la de esa venta puntual (`venta.fechaHora`, en formato 24 horas para que
- * quepa en `COL_HORA_CIERRE`), para poder ubicarla en el tiempo dentro del
- * listado del día.
+ * la de esa venta puntual (`venta.fechaHora`, en formato 24 horas, sin
+ * am/pm, para que la línea sea lo más corta posible junto al consecutivo de
+ * 9 dígitos), para poder ubicarla en el tiempo dentro del listado del día.
  *
- * El "Kiosko <ID>" del encabezado toma `caja` de la primera orden del día
- * (todas las órdenes de un mismo cierre vienen del mismo dispositivo físico,
- * ver `CAJA_ID` en `services/consecutivo.ts`); si por alguna razón no viene
- * seteado (ventas antiguas en la cola offline, ver `Venta.caja` en
- * `types/order.ts`), cae a `CAJA_ID` como respaldo.
+ * El "Kiosko <ID>" toma `caja` de la primera orden del día (todas las
+ * órdenes de un mismo cierre vienen del mismo dispositivo físico); si por
+ * alguna razón no viene seteado (ventas antiguas en la cola offline, ver
+ * `Venta.caja` en `types/order.ts`), cae a `CAJA_ID` como respaldo.
  *
  * Los montos (de cada orden y el total del día) usan `formatMontoFactura`
  * (prefijo "c " + dos decimales fijos, ver ese helper) en vez de `formatCRC`
  * — mismo criterio del comprobante del cliente (`ticketCliente`): este
  * tiquete también se imprime en la estación "Cliente", así que usa el mismo
- * formato de monto en texto plano, sin el símbolo ₡.
+ * formato de monto en texto plano, sin el símbolo ₡ (que en ESC/POS requiere
+ * rasterizarse como imagen, ver `services/escpos.ts`).
  */
 export function ticketCierreCaja(ordenes: Venta[]): TicketLine[] {
   const ahora = new Date()
   const caja = ordenes[0]?.caja ?? CAJA_ID
   const lineas: TicketLine[] = [
-    'Carnes Don Fernando',
+    'Cierre de datáfono - Carnes Don Fernando',
     `Kiosko ${caja}`,
-    `${ahora.toLocaleDateString('es-CR', { dateStyle: 'short' })}, ${formatHoraAmPm(ahora)}`,
+    formatFechaHoraAmPm(ahora, true),
     '',
-    ...encabezadoColumnasCierre(),
   ]
 
   let total = 0

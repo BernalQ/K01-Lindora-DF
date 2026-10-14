@@ -5,6 +5,7 @@ import { obtenerTodasLasVentas } from '../../services/offlineQueue'
 import { enviarTicket } from '../../services/backendPrint'
 import {
   NOMBRES_IMPRESORA,
+  formatHoraAmPm,
   generarTickets,
   ticketCancelacionVoucher,
   ticketCierreCaja,
@@ -426,7 +427,7 @@ function PanelOrdenesDelDia() {
               <div className="flex flex-col">
                 <span className="font-bold text-wood-900">#{venta.id}</span>
                 <span className="text-sm text-wood-500">
-                  {new Date(venta.fechaHora).toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}
+                  {formatHoraAmPm(new Date(venta.fechaHora), false)}
                   {' · '}
                   {t('admin.ordenesMesa', { mesa: venta.mesa })}
                 </span>
@@ -665,7 +666,12 @@ function DetalleOrden({ venta }: { venta: VentaEnCola['venta'] }) {
           se perdía con el pop-up simplificado verde/rojo que sólo tenía
           "Cerrar" (ver hallazgo de auditoría). */}
       {resultadoVoid && (
-        <DatafonoPopup resultado={resultadoVoid} onReintentar={cancelarOrden} onCerrar={() => setResultadoVoid(null)} />
+        <DatafonoPopup
+          resultado={resultadoVoid}
+          onReintentar={cancelarOrden}
+          onCerrar={() => setResultadoVoid(null)}
+          tituloAprobadaOverride="admin.ordenesCancelarCompletada"
+        />
       )}
     </div>
   )
@@ -844,7 +850,12 @@ function PanelCierreCaja() {
           Independiente del pop-up de confirmación y del estado de impresión
           (que no tiene pop-up propio). */}
       {resultadoTm && (
-        <DatafonoPopup resultado={resultadoTm} onReintentar={enviarCierreAlDatafono} onCerrar={() => setResultadoTm(null)} />
+        <DatafonoPopup
+          resultado={resultadoTm}
+          onReintentar={enviarCierreAlDatafono}
+          onCerrar={() => setResultadoTm(null)}
+          tituloAprobadaOverride="admin.cierreCompletado"
+        />
       )}
     </div>
   )
