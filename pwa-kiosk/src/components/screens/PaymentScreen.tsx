@@ -10,8 +10,6 @@ import {
 } from '../../data/catalog'
 import PrecioConIvi from '../ui/PrecioConIvi'
 import ProductImage from '../ui/ProductImage'
-import TicketPopup from '../ui/TicketPopup'
-import WsDfPopup from '../ui/WsDfPopup'
 import DatafonoPopup from '../ui/DatafonoPopup'
 import { cartItemCount, cartTotal, lineTerminosTexto, useCartStore } from '../../store/cartStore'
 import { useMesaStore } from '../../store/mesaStore'
@@ -37,10 +35,8 @@ import {
   type PrinterId,
   type TicketLine,
 } from '../../services/tickets'
-import CodisaOrdenPopup from '../ui/CodisaOrdenPopup'
 import type { FacturaItem } from '../../types/factura'
 import type { OrderItem, Venta } from '../../types/order'
-import type { ResultadoOrdenCodisa, ValidacionWsDf, WsDfPayload } from '../../types/wsdf'
 import type { ResultadoDatafono } from '../../types/datafono'
 import { useLanguage } from '../../context/useLanguage'
 
@@ -73,17 +69,16 @@ type EstadoFactura = 'idle' | 'generando'
 /**
  * Pasos del flujo posterior a la aprobación del pago:
  * - 'ninguno': aún no se procesó (o ya se completó y se salió de la pantalla).
- * - 'popupWsDf': muestra el payload que se enviaría al API WS DF de Codisa
- *   (sólo verificación en esta fase, ver `services/wsdf.ts`).
- * - 'popupCliente': muestra el comprobante del comensal que se imprimiría.
  * - 'preguntaOtraOrden': (sólo mesa compartida) pregunta obligatoria si hay otra orden.
  *
- * El tiquete de carnicería/restaurante (por orden individual en mesa simple,
- * o consolidado al cerrar una mesa compartida) ya NO tiene un pop-up propio:
- * se envía a imprimir directamente (ver el efecto de confirmación de venta y
- * `handleOtraOrdenNo` más abajo), sin ventana emergente de confirmación.
+ * Ni el comprobante del comensal, ni el envío a Codisa (WS DF), ni el
+ * tiquete de carnicería/restaurante tienen pop-up propio: todo se envía
+ * directo al backend/Codisa en el efecto de confirmación de venta (y
+ * `handleOtraOrdenNo` para el consolidado de mesa compartida), sin ventana
+ * emergente de verificación ni de resultado — sólo queda registrado en los
+ * logs correspondientes (ver `registrarLogImpresion`/`registrarLogCodisa`).
  */
-type PasoPostPago = 'ninguno' | 'popupWsDf' | 'popupCliente' | 'preguntaOtraOrden'
+type PasoPostPago = 'ninguno' | 'preguntaOtraOrden'
 
 export default function PaymentScreen({
   onBack,
@@ -164,19 +159,6 @@ export default function PaymentScreen({
     return numeroFacturaRef.current
   }
 
-  // Datos para el pop-up de verificación del payload WS DF (Codisa), mostrado
-  // justo después de aprobarse el pago (ver `services/wsdf.ts`).
-  const [ventaConfirmada, setVentaConfirmada] = useState<Venta | null>(null)
-  const [wsdfPayload, setWsdfPayload] = useState<WsDfPayload | null>(null)
-  const [wsdfValidacion, setWsdfValidacion] = useState<ValidacionWsDf | null>(null)
-  // Envío real del pedido a Codisa (`?action=orden`, ver `services/wsdf.ts`):
-  // `enviandoOrdenCodisa` controla el texto/disabled de los botones de
-  // `WsDfPopup` mientras el POST está en vuelo; `resultadoOrdenCodisa`
-  // (no-nulo) hace que se muestre `CodisaOrdenPopup` con el desenlace
-  // (éxito/error) en vez del propio `WsDfPopup`.
-  const [enviandoOrdenCodisa, setEnviandoOrdenCodisa] = useState(false)
-  const [resultadoOrdenCodisa, setResultadoOrdenCodisa] = useState<ResultadoOrdenCodisa | null>(null)
-
   /**
    * Cobro real con el datáfono BAC (Transaction Manager, ver
    * `services/datafono.ts`): envía una transacción SALE por el monto total
@@ -234,9 +216,12 @@ export default function PaymentScreen({
 
   /**
    * Cierra el pop-up de resultado del datáfono. Si la transacción fue
-   * aprobada, recién ahora se avanza `estado` a 'aprobado' (dispara el
-   * efecto de confirmación de venta); si no, se vuelve a 'idle' para que el
-   * usuario pueda intentar cobrar de nuevo desde el botón principal.
+   * aprobada, el propio `DatafonoPopup` llama a esta función solo, sin tap
+   * del operador, a los 2 segundos (ver requerimiento "quitar el botón de
+   * Continuar"), y recién ahora se avanza `estado` a 'aprobado' (dispara el
+   * efecto de confirmación de venta); si no fue aprobada, el operador sí
+   * debe cerrar el pop-up manualmente y `estado` vuelve a 'idle' para poder
+   * intentar cobrar de nuevo desde el botón principal.
    *
    * CASO CRÍTICO — 'transaccion-en-curso': esta categoría significa que esta
    * llamada en particular fue rechazada SIN tocar red porque OTRA llamada
@@ -358,14 +343,22 @@ export default function PaymentScreen({
     enviarVentaACodisa(nuevaVenta)
     enviarVentaAAwsIot(nuevaVenta)
 
-    // Arma el payload WS DF (Codisa) y lo valida, para mostrarlo en el
-    // pop-up de verificación que se abre a continuación. En esta fase no se
-    // envía todavía (ver services/wsdf.ts).
+    // Envío del pedido a Codisa (WS DF) directo al backend, sin pop-up de
+    // verificación ni de resultado (ver requerimiento): se arma y valida el
+    // payload igual que antes (ver services/wsdf.ts), pero ahora, si es
+    // válido, se envía de inmediato en segundo plano — el JSON enviado y la
+    // respuesta recibida quedan registrados por `enviarPedidoWsDf` en la
+    // bitácora de Codisa (`registrarLogCodisa`), sin bloquear el resto del
+    // flujo ni requerir ninguna confirmación del operador.
     const payloadWsDf = construirPedidoWsDf(nuevaVenta)
     const validacionWsDf = validarPedidoWsDf(payloadWsDf)
-    setVentaConfirmada(nuevaVenta)
-    setWsdfPayload(payloadWsDf)
-    setWsdfValidacion(validacionWsDf)
+    if (validacionWsDf.ok) {
+      enviarPedidoWsDf(payloadWsDf).catch((err) =>
+        console.error('[PaymentScreen] Error inesperado enviando pedido WS DF a Codisa:', err),
+      )
+    } else {
+      console.error('[PaymentScreen] Pedido WS DF inválido, no se envía a Codisa:', validacionWsDf.errores)
+    }
 
     // La venta con factura electrónica ya quedó registrada en el Excel local
     // (ventas.xlsx) por el print-bridge al llamar /factura. Aquí sólo
@@ -417,65 +410,22 @@ export default function PaymentScreen({
     }
 
     setTicketsGenerados(tickets)
-    setPaso('popupWsDf')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [estado, esperandoFactura])
 
-  /**
-   * "Confirmar envío" del pop-up WS DF: envía el pedido real a Codisa
-   * (`enviarPedidoWsDf`, ver `services/wsdf.ts`) y muestra el desenlace en
-   * `CodisaOrdenPopup` (éxito o error con reintentar). El `paso` permanece
-   * en 'popupWsDf' durante todo este intercambio — sólo avanza a
-   * 'popupCliente' cuando el usuario cierra `CodisaOrdenPopup` (ver
-   * `handleCerrarOrdenCodisa`), sea cual sea el desenlace: la venta ya
-   * quedó cobrada e impresa, así que un error de Codisa no debe bloquear
-   * el resto del flujo del kiosko.
-   */
-  const handleConfirmarEnvioWsDf = async () => {
-    if (!wsdfPayload) {
-      setPaso('popupCliente')
-      return
-    }
-    setEnviandoOrdenCodisa(true)
-    const resultado = await enviarPedidoWsDf(wsdfPayload)
-    setEnviandoOrdenCodisa(false)
-    setResultadoOrdenCodisa(resultado)
-  }
-
-  /** "Cancelar" del pop-up WS DF: no envía nada, simplemente continúa el flujo (la venta ya quedó cobrada e impresa). */
-  const handleCancelarWsDf = () => {
-    setPaso('popupCliente')
-  }
-
-  /** "Intentar de nuevo" del pop-up de resultado de Codisa: reenvía el mismo payload. */
-  const handleReintentarOrdenCodisa = () => {
-    setResultadoOrdenCodisa(null)
-    handleConfirmarEnvioWsDf()
-  }
-
-  /** Cierra el pop-up de resultado de Codisa y avanza al siguiente paso del flujo, sin importar el desenlace. */
-  const handleCerrarOrdenCodisa = () => {
-    setResultadoOrdenCodisa(null)
-    setPaso('popupCliente')
-  }
-
-  /**
-   * Cierra el popup del comprobante del comensal. En mesa compartida avanza
-   * a la pregunta de "otra orden"; en mesa simple termina el flujo ahí mismo:
-   * los tiquetes de carnicería/restaurante ya se enviaron a imprimir de
-   * inmediato junto con el del comensal (ver el efecto de confirmación de
-   * venta arriba), sin pop-up de confirmación propio (ver requerimiento), así
-   * que no hay nada más que mostrar.
-   */
-  const handleCerrarPopupCliente = () => {
+    // Ya no hay pop-up de comprobante del comensal ni de Codisa que cerrar
+    // (ver requerimiento): en mesa compartida se avanza directo a la
+    // pregunta obligatoria de "otra orden" (inline, no es pop-up); en mesa
+    // simple la venta ya quedó cobrada, impresa y enviada a Codisa, así que
+    // el flujo regresa de inmediato a la pantalla principal para la
+    // siguiente orden.
     if (mesaCompartida) {
       setPaso('preguntaOtraOrden')
-      return
+    } else {
+      clearCart()
+      setPaso('ninguno')
+      onVolverInicio()
     }
-    clearCart()
-    setPaso('ninguno')
-    onVolverInicio()
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estado, esperandoFactura])
 
   /** "Sí, otra orden": limpia el carrito para la siguiente orden, conserva el ID de mesa. */
   const handleOtraOrdenSi = () => {
@@ -488,8 +438,8 @@ export default function PaymentScreen({
    * "Reintenta" una sola impresora de la venta recién confirmada (mesa
    * simple), usando los mismos tickets ya generados (`ticketsGenerados`) —
    * no se vuelve a generar el ticket ni se reenvían las otras estaciones.
-   * Se usa tanto desde el banner no-bloqueante como desde el pop-up del
-   * comprobante del comensal (ver `TicketPopup`/render más abajo).
+   * Se usa desde el banner no-bloqueante de impresión fallida (ver render
+   * más abajo); ya no hay pop-up propio del comprobante del comensal.
    */
   const handleReintentarImpresion = (printer: PrinterId) => {
     if (!ticketsGenerados) return
@@ -963,40 +913,14 @@ export default function PaymentScreen({
         </main>
       )}
 
-      {/* Popup 0: verificación del payload antes de enviarlo a Codisa (factura electrónica) */}
-      {paso === 'popupWsDf' && ventaConfirmada && wsdfPayload && wsdfValidacion && !resultadoOrdenCodisa && (
-        <WsDfPopup
-          venta={ventaConfirmada}
-          payload={wsdfPayload}
-          validacion={wsdfValidacion}
-          onConfirmar={handleConfirmarEnvioWsDf}
-          onCancelar={handleCancelarWsDf}
-          enviando={enviandoOrdenCodisa}
-        />
-      )}
-
-      {/* Popup 0b: desenlace del envío a Codisa (éxito/error, con reintentar) */}
-      {paso === 'popupWsDf' && resultadoOrdenCodisa && (
-        <CodisaOrdenPopup
-          resultado={resultadoOrdenCodisa}
-          onReintentar={handleReintentarOrdenCodisa}
-          onCerrar={handleCerrarOrdenCodisa}
-        />
-      )}
-
-      {/* Popup 1: comprobante del comensal (cliente) — refleja el resultado
-          real de `enviarTicket` (ver `impresionCliente`), en vez de asumir
-          silenciosamente que se imprimió (ver hallazgo de auditoría). */}
-      {paso === 'popupCliente' && ticketsGenerados && (
-        <TicketPopup
-          titulo={t('confirmation.popupClienteTitulo')}
-          secciones={[{ titulo: NOMBRES_IMPRESORA.cliente, lineas: ticketsGenerados.cliente }]}
-          textoBoton={t('common.cerrar')}
-          onCerrar={handleCerrarPopupCliente}
-          estadoImpresion={impresionCliente}
-          onReintentarImpresion={() => handleReintentarImpresion('cliente')}
-        />
-      )}
+      {/* Ya no hay pop-up de verificación/resultado de Codisa (WS DF) ni de
+          comprobante del comensal (ver requerimiento): el envío a Codisa y
+          la impresión del ticket de cliente se disparan directo al backend
+          dentro del efecto de confirmación de venta (arriba), sin ventana
+          emergente — sólo quedan registrados en sus respectivas bitácoras
+          (`registrarLogCodisa`/`registrarLogImpresion`). El banner
+          no-bloqueante de abajo sigue avisando si una impresión falló de
+          verdad. */}
 
       {/* Banner no-bloqueante: avisa de cualquier impresión con error REAL
           (no el caso simulado de desarrollo) de las estaciones de la venta

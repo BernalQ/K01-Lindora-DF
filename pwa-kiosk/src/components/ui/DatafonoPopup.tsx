@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLanguage } from '../../context/useLanguage'
 import type { TranslationKey } from '../../i18n/translations'
 import type { CategoriaResultadoDatafono, ResultadoDatafono } from '../../types/datafono'
@@ -12,8 +12,8 @@ interface DatafonoPopupProps {
    * Título alternativo para `resultado.categoria === 'aprobada'`, usado por
    * flujos distintos al cobro con datáfono que reutilizan este mismo
    * pop-up (ej. la anulación/VOID de una orden en `AdminScreen.tsx`, que
-   * pide mostrar "✔ Cancelación completada" en vez del genérico "Transacción
-   * exitosa" de `datafono.tituloAprobada`). Si no se indica, se usa el título
+   * pide mostrar "✔ Cancelación completada" en vez del genérico "✔ Transacción
+   * completada correctamente" de `datafono.tituloAprobada`). Si no se indica, se usa el título
    * genérico de siempre — el resto de categorías (denegada/error/etc.) no
    * cambian, ya muestran `resultado.mensaje` con el detalle real del TM.
    */
@@ -94,6 +94,20 @@ export default function DatafonoPopup({
     onReintentar()
   }
 
+  // Transacción aprobada (SALE/VOID/BATCH_SETTLEMENT, cualquier flujo que
+  // use este pop-up compartido): ya no requiere ningún tap del operador — se
+  // muestra el mensaje de éxito y se cierra solo a los 2 segundos, avanzando
+  // automáticamente al siguiente paso (`onCerrar`, ver requerimiento "quitar
+  // el botón de Continuar / cerrar automático con timer"). Para el resto de
+  // categorías (denegada/error/etc.) el pop-up sigue requiriendo que el
+  // operador decida (Reintentar/Cerrar), ya que ahí sí hace falta su acción.
+  useEffect(() => {
+    if (resultado.categoria !== 'aprobada') return
+    const id = setTimeout(onCerrar, 2000)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultado])
+
   if (confirmandoReintento) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -173,28 +187,33 @@ export default function DatafonoPopup({
           </dl>
         )}
 
-        <div className="flex w-full flex-col gap-2 pt-1">
-          {resultado.permiteReintentar && (
+        {/* Aprobada: sin botones — se cierra sola a los 2s (ver efecto
+            arriba). El resto de categorías sí necesita que el operador
+            decida (reintentar o cerrar), así que conservan sus botones. */}
+        {resultado.categoria !== 'aprobada' && (
+          <div className="flex w-full flex-col gap-2 pt-1">
+            {resultado.permiteReintentar && (
+              <button
+                type="button"
+                onClick={handleClickReintentar}
+                className="w-full rounded-2xl bg-brand-red py-4 text-base font-bold text-white transition-transform active:scale-98"
+              >
+                {t('payment.reintentar')}
+              </button>
+            )}
             <button
               type="button"
-              onClick={handleClickReintentar}
-              className="w-full rounded-2xl bg-brand-red py-4 text-base font-bold text-white transition-transform active:scale-98"
+              onClick={onCerrar}
+              className={
+                resultado.permiteReintentar
+                  ? 'w-full rounded-2xl bg-wood-100 py-4 text-base font-bold text-wood-800 transition-transform active:scale-98'
+                  : 'w-full rounded-2xl bg-brand-red py-4 text-base font-bold text-white transition-transform active:scale-98'
+              }
             >
-              {t('payment.reintentar')}
+              {t('common.cerrar')}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={onCerrar}
-            className={
-              resultado.permiteReintentar
-                ? 'w-full rounded-2xl bg-wood-100 py-4 text-base font-bold text-wood-800 transition-transform active:scale-98'
-                : 'w-full rounded-2xl bg-brand-red py-4 text-base font-bold text-white transition-transform active:scale-98'
-            }
-          >
-            {resultado.categoria === 'aprobada' ? t('payment.continue') : t('common.cerrar')}
-          </button>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   )

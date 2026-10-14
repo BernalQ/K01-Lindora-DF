@@ -250,7 +250,7 @@ const dictionaries = {
     'wsdf.confirmarCancelarSi': 'Sí, cancelar',
     'wsdf.confirmarCancelarNo': 'No, volver',
 
-    'datafono.tituloAprobada': 'Transacción exitosa',
+    'datafono.tituloAprobada': '✔ Transacción completada correctamente',
     'datafono.tituloDenegada': 'Transacción denegada',
     'datafono.tituloInvalida': 'Transacción inválida',
     'datafono.tituloErrorSistema': 'Error de sistema',
@@ -517,7 +517,7 @@ const dictionaries = {
     'wsdf.confirmarCancelarSi': 'Yes, cancel',
     'wsdf.confirmarCancelarNo': 'No, go back',
 
-    'datafono.tituloAprobada': 'Successful transaction',
+    'datafono.tituloAprobada': '✔ Transaction completed successfully',
     'datafono.tituloDenegada': 'Transaction denied',
     'datafono.tituloInvalida': 'Invalid transaction',
     'datafono.tituloErrorSistema': 'System error',
