@@ -2,6 +2,7 @@ import { GUARNICIONES, PRODUCTS, opcionParaMostrar } from '../data/catalog'
 import { CAJA_ID } from './consecutivo'
 import type { CategoryId } from '../types/catalog'
 import type { OrderItem, Venta } from '../types/order'
+import type { ResultadoDatafono } from '../types/datafono'
 
 export type PrinterId = 'carniceria' | 'restaurante' | 'cliente'
 
@@ -275,19 +276,20 @@ function encabezadoColumnasItems(): TicketLine[] {
 }
 
 /**
- * Línea de item en 3 columnas para el comprobante del cliente: "Cant"
- * (estrecha, sin la letra "x", ver `COL_CANT`), "Producto" (la columna más
- * ancha) y "Precio" (alineado a la derecha). Si el nombre del producto es
- * muy largo para compartir línea con el precio, el precio baja a su propia
- * línea, siempre alineado a la misma columna derecha (igual criterio que
- * `lineaConMonto`, usado por el resto de los tickets).
+ * Línea(s) de item en 3 columnas para el comprobante del cliente: "Cant"
+ * (estrecha, sin la letra "x", ver `COL_CANT`) + "Producto" en su propio
+ * renglón (con todo el ancho disponible, sin tener que compartir línea con
+ * el precio), y "Precio" siempre en el renglón siguiente, alineado a la
+ * columna derecha (ver requerimiento "mover la columna de Precio más a la
+ * derecha, dando más espacio a la columna de Producto"): antes el precio
+ * podía compartir línea con el nombre del producto cuando éste era corto, lo
+ * que limitaba el ancho útil de "Producto" a lo que quedara libre junto al
+ * precio; ahora "Producto" siempre tiene las columnas 6-32 completas para sí
+ * mismo y "Precio" queda consistentemente en su propio renglón, pegado al
+ * borde derecho del papel.
  */
 function lineaItemColumnas(cantidad: number, producto: string, precio: string): string[] {
   const prefijo = `${String(cantidad).padEnd(COL_CANT)}${producto}`
-  const espaciosDisponibles = ANCHO - prefijo.length - precio.length
-  if (espaciosDisponibles >= 1) {
-    return [`${prefijo}${' '.repeat(espaciosDisponibles)}${precio}`]
-  }
   const relleno = Math.max(0, ANCHO - precio.length)
   return [prefijo, `${' '.repeat(relleno)}${precio}`]
 }
@@ -360,10 +362,14 @@ function nombreCarniceria(item: OrderItem): string | null {
  * saber cuánto preparar de cada corte, el detalle de preparación va en el
  * ticket de restaurante (`agruparParaCocina`).
  *
- * Todas las líneas se marcan como `big` (doble ancho/doble alto en la
- * impresión térmica, ver `agregarLinea` en `services/escpos.ts`) para que la
- * carnicería pueda leer cada corte a preparar de un vistazo, sin acercarse al
- * tiquete (requerimiento de letra más grande para carnicería).
+ * Todas las líneas se marcan como `medium` (doble alto, sin doble ancho, ver
+ * `agregarLinea` en `services/escpos.ts`) para que la carnicería pueda leer
+ * cada corte a preparar de un vistazo, sin acercarse al tiquete. Antes se
+ * marcaban `big` (doble ancho + doble alto, requerimiento anterior de "letra
+ * más grande para carnicería"); requerimiento de negocio vigente pide una
+ * letra "un poco más pequeña" que esa, de ahí el cambio a `medium` en vez de
+ * volver a tamaño normal — sigue siendo notablemente más grande que el texto
+ * normal del resto del tiquete, sólo más compacta que el `big` anterior.
  */
 function lineasCarniceria(items: OrderItem[]): TicketLine[] {
   const totales = new Map<string, number>()
@@ -374,7 +380,7 @@ function lineasCarniceria(items: OrderItem[]): TicketLine[] {
   }
   return [...totales.entries()].map(([nombre, cantidad]) => ({
     text: agregarItem(`${cantidad}x ${nombre}`)[0],
-    big: true,
+    medium: true,
   }))
 }
 
@@ -384,6 +390,16 @@ export function ticketCarniceria(venta: Venta): TicketLine[] {
     '*** CARNICERIA ***',
     ...encabezado(venta),
     FIN_ENCABEZADO,
+    // 4 renglones en blanco antes de empezar a imprimir productos (ver
+    // requerimiento); el listado que sigue ya se imprime alineado a la
+    // izquierda por el propio `FIN_ENCABEZADO` (ESC a 0, ver
+    // `construirBufferTicket` en `services/escpos.ts`), así que no hace
+    // falta ningún otro cambio para cumplir "alineación completamente a la
+    // izquierda".
+    '',
+    '',
+    '',
+    '',
     ...lineasCarniceria(venta.items),
     SEPARADOR,
   ]
@@ -392,14 +408,18 @@ export function ticketCarniceria(venta: Venta): TicketLine[] {
 /**
  * Envuelve un texto en un `TicketLine`, aplicando primero el margen
  * izquierdo mínimo de `agregarItem` (sin monto, por lo que siempre devuelve
- * una sola línea). Si `agrandar` es `true` se marca como `big` (doble
- * ancho/doble alto en la impresión térmica, ver `agregarLinea` en
+ * una sola línea). Si `agrandar` es `true` se marca como `medium` (doble
+ * alto, sin doble ancho, en la impresión térmica, ver `agregarLinea` en
  * `services/escpos.ts`); si no, se devuelve el texto plano (tamaño normal).
- * Usado en el ticket de parrilla/cocina (ver `lineasItemCocina`).
+ * Usado en el ticket de parrilla/cocina (ver `lineasItemCocina`). Antes se
+ * marcaba `big` (doble ancho + doble alto, requerimiento anterior de
+ * aumentar la letra de los cortes de parrilla); requerimiento de negocio
+ * vigente pide una letra "un poco más pequeña" que esa, de ahí el cambio a
+ * `medium`.
  */
 function conTamano(texto: string, agrandar: boolean): TicketLine {
   const linea = agregarItem(texto)[0]
-  return agrandar ? { text: linea, big: true } : linea
+  return agrandar ? { text: linea, medium: true } : linea
 }
 
 /**
@@ -418,10 +438,9 @@ function conTamano(texto: string, agrandar: boolean): TicketLine {
  * "Guarniciones:") para no perder claridad fuera de ese contexto fijo.
  *
  * Sólo los items de la categoría "parrilla" (nombre/cantidad, corte, término
- * y guarniciones) se marcan como `big` (letra más grande, ver `conTamano`),
- * según el requerimiento de aumentar la letra de "todos los cortes de
- * parrilla con su término y guarnición". El resto de items del ticket de
- * cocina (entradas, bebidas) se imprime a tamaño normal.
+ * y guarniciones) se marcan como `medium` (letra más grande que la normal,
+ * sin llegar al tamaño `big`, ver `conTamano`). El resto de items del ticket
+ * de cocina (entradas, bebidas) se imprime a tamaño normal.
  */
 function lineasItemCocina(item: OrderItem): TicketLine[] {
   const lineas: TicketLine[] = []
@@ -493,6 +512,13 @@ export function ticketRestaurante(venta: Venta): TicketLine[] {
     '*** PARRILLA / COCINA ***',
     ...encabezado(venta),
     FIN_ENCABEZADO,
+    // 4 renglones en blanco antes de empezar a imprimir productos (ver
+    // requerimiento); el listado ya se imprime alineado a la izquierda por
+    // el propio `FIN_ENCABEZADO`.
+    '',
+    '',
+    '',
+    '',
     ...agruparParaCocina(venta.items),
   ]
   lineas.push(SEPARADOR)
@@ -514,6 +540,12 @@ export function ticketConsolidadoCarniceria(mesaId: string, ordenes: Venta[]): T
     formatFechaHoraAmPm(new Date()),
     '',
     FIN_ENCABEZADO,
+    // 4 renglones en blanco antes de empezar a imprimir productos (ver
+    // requerimiento, mismo criterio que `ticketCarniceria`).
+    '',
+    '',
+    '',
+    '',
     ...lineasCarniceria(items),
     SEPARADOR,
   ]
@@ -533,6 +565,12 @@ export function ticketConsolidadoRestaurante(mesaId: string, ordenes: Venta[]): 
     formatFechaHoraAmPm(new Date()),
     '',
     FIN_ENCABEZADO,
+    // 4 renglones en blanco antes de empezar a imprimir productos (ver
+    // requerimiento, mismo criterio que `ticketRestaurante`).
+    '',
+    '',
+    '',
+    '',
     ...agruparParaCocina(items),
   ]
   lineas.push(SEPARADOR)
@@ -621,6 +659,22 @@ export function ticketCliente(venta: Venta): TicketLine[] {
     lineas.push(...partirEnLineas(venta.claveFactura, 20))
   }
 
+  // Número de Transacción/Autorización del Transaction Manager del BAC (ver
+  // requerimiento): el TM no expone un campo separado llamado "número de
+  // transacción" (ver `RespuestaDatafonoBody` en types/datafono.ts), así que
+  // se usa `referenceNumber` para esa etiqueta y `authorizationNumber` para
+  // "Número de Autorización" — ambos ya se capturan en `venta.referenciaDatafono`/
+  // `venta.autorizacionDatafono` al cerrarse el pop-up de resultado del cobro
+  // (ver PaymentScreen.tsx). Sólo se imprime el bloque si al menos uno de los
+  // dos está presente (ventas antiguas en la cola offline, de antes de este
+  // requerimiento, no lo tienen).
+  if (venta.autorizacionDatafono || venta.referenciaDatafono) {
+    lineas.push('')
+    lineas.push('')
+    if (venta.referenciaDatafono) lineas.push(`Número de Transacción: ${venta.referenciaDatafono}`)
+    if (venta.autorizacionDatafono) lineas.push(`Número de Autorización: ${venta.autorizacionDatafono}`)
+  }
+
   lineas.push('')
   lineas.push('Gracias por su compra')
   lineas.push('Los esperamos pronto')
@@ -676,23 +730,21 @@ export function formatFechaHoraAmPm(fecha: Date, incluirSegundos = false): strin
 
 /**
  * Línea de una orden del tiquete de cierre de caja: "Orden #<consecutivo>
- * <hora>" seguido del monto, alineado a la columna derecha (igual criterio
- * que `lineaConMonto`/`lineaItemColumnas`). Si no cabe en una sola línea (el
- * consecutivo de 9 dígitos, ver `services/consecutivo.ts`, casi siempre la
- * agota en el ancho de 32 columnas de la impresora térmica), el monto baja a
- * su propia línea, siempre alineado a esa misma columna derecha — sin
- * encabezado de columnas antes del listado (requerimiento: "Línea 4 en
- * adelante: listar todas las órdenes del día" directamente, ver
- * `ticketCierreCaja`).
+ * <hora> <monto>", completamente alineada a la izquierda (ver requerimiento:
+ * "el listado de órdenes debe quedar alineado totalmente a la izquierda"),
+ * sin encabezado de columnas antes del listado (requerimiento previo: "Línea
+ * 4 en adelante: listar todas las órdenes del día" directamente, ver
+ * `ticketCierreCaja`). Antes el monto se alineaba a la columna derecha (igual
+ * criterio que `lineaConMonto`/`lineaItemColumnas`); ese right-align se quitó
+ * para este tiquete en particular — la suma total al pie (ver
+ * `ticketCierreCaja`) no cambia. Si la línea completa excede el ancho del
+ * papel (el consecutivo de 9 dígitos, ver `services/consecutivo.ts`, casi
+ * siempre la deja muy cerca del límite de 32 columnas), la impresora térmica
+ * la continúa automáticamente en el siguiente renglón físico, sin perder la
+ * alineación izquierda.
  */
 function lineaOrdenCierre(numeroOrden: string, hora: string, total: string): string[] {
-  const prefijo = `Orden #${numeroOrden} ${hora}`
-  const espaciosDisponibles = ANCHO - prefijo.length - total.length
-  if (espaciosDisponibles >= 1) {
-    return [`${prefijo}${' '.repeat(espaciosDisponibles)}${total}`]
-  }
-  const relleno = Math.max(0, ANCHO - total.length)
-  return [prefijo, `${' '.repeat(relleno)}${total}`]
+  return [`Orden #${numeroOrden} ${hora} ${total}`]
 }
 
 /**
@@ -701,8 +753,9 @@ function lineaOrdenCierre(numeroOrden: string, hora: string, total: string): str
  * Fernando", línea 2 "Kiosko <CAJA_ID>" (identifica el dispositivo físico
  * cuando hay más de un kiosko, ver `CAJA_ID` en `services/consecutivo.ts`),
  * línea 3 fecha/hora del cierre, línea 4 en blanco y desde la línea 5 el
- * listado de órdenes del día ("Orden #<consecutivo> <hora>" + monto a la
- * derecha, ver `lineaOrdenCierre`), sin encabezado de columnas — generado
+ * listado de órdenes del día ("Orden #<consecutivo> <hora> <monto>",
+ * completamente alineado a la izquierda, ver `lineaOrdenCierre`), sin
+ * encabezado de columnas — generado
  * bajo demanda desde el panel de administración (botón "Cierre de Caja", ver
  * `AdminScreen.tsx` -> `PanelCierreCaja`). Se dispara junto con (pero sin
  * depender de) el envío de `BATCH_SETTLEMENT` al Transaction Manager del BAC
@@ -756,15 +809,47 @@ export function ticketCierreCaja(ordenes: Venta[]): TicketLine[] {
 }
 
 /**
- * Tiquete de cancelación de voucher: se imprime en la estación "Cliente"
+ * Tiquete de cancelación de orden: se imprime en la estación "Cliente"
  * cuando el admin anula una orden ya cobrada (botón "Cancelar" en
  * `AdminScreen.tsx` -> `PanelOrdenesDelDia`), después de que el Transaction
  * Manager del BAC procese el `VOID` correspondiente (ver
- * `enviarTransaccionDatafono` en `services/datafono.ts`). Formato fijo de 3
- * líneas pedido por el requerimiento del kiosko.
+ * `enviarTransaccionDatafono` en `services/datafono.ts`).
+ *
+ * Reutiliza el mismo encabezado (logo/nombre/slogan/dirección/contacto) y el
+ * mismo cierre ("Gracias por su compra"/"Los esperamos pronto") que el
+ * comprobante del cliente (ver requerimiento: "usar el mismo formato de
+ * logo/encabezado que el tiquete cliente"), con el título "Recibo de
+ * Cancelación de Orden" en vez del encabezado de factura/columnas de items.
+ *
+ * El Número de Transacción/Autorización que se imprime es el que devolvió
+ * el VOID (`resultadoVoid`, la respuesta más reciente del TM para esta
+ * orden); si por alguna razón el VOID no trajo alguno de los dos (ej.
+ * rechazado antes de llegar al banco), se cae al de la venta original
+ * (`venta.referenciaDatafono`/`venta.autorizacionDatafono`, capturados en el
+ * SALE que se está anulando) para no dejar el campo vacío. Mismo criterio de
+ * etiquetas que `ticketCliente`: "Número de Transacción" para
+ * `referenceNumber`, "Número de Autorización" para `authorizationNumber` —
+ * el TM no expone un campo separado de "número de transacción" (ver
+ * `RespuestaDatafonoBody` en types/datafono.ts).
  */
-export function ticketCancelacionVoucher(referenceNumber: string): TicketLine[] {
-  return ['Carnes Don Fernando', 'Cancelación de Voucher', `Referencia: ${referenceNumber}`]
+export function ticketCancelacionVoucher(venta: Venta, resultadoVoid: ResultadoDatafono): TicketLine[] {
+  const numeroTransaccion = resultadoVoid.referenceNumber ?? venta.referenciaDatafono
+  const numeroAutorizacion = resultadoVoid.authorizationNumber ?? venta.autorizacionDatafono
+
+  const lineas: TicketLine[] = [
+    ...encabezadoCliente(venta),
+    { text: 'Recibo de Cancelación de Orden', bold: true },
+    '',
+  ]
+
+  if (numeroTransaccion) lineas.push(`Número de Transacción: ${numeroTransaccion}`)
+  if (numeroAutorizacion) lineas.push(`Número de Autorización: ${numeroAutorizacion}`)
+
+  lineas.push('')
+  lineas.push('Gracias por su compra')
+  lineas.push('Los esperamos pronto')
+
+  return lineas
 }
 
 export function generarTickets(venta: Venta): Record<PrinterId, TicketLine[]> {

@@ -549,7 +549,7 @@ function DetalleOrden({ venta }: { venta: VentaEnCola['venta'] }) {
     setEnviandoVoid(false)
     setResultadoVoid(resultado)
 
-    const ticket = ticketCancelacionVoucher(venta.referenciaDatafono)
+    const ticket = ticketCancelacionVoucher(venta, resultado)
     const resultadoImpresion = await enviarTicket('cliente', ticket)
     console.log('[admin:cancelacion] Resultado de impresión del comprobante de cancelación:', resultadoImpresion)
   }

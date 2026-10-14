@@ -183,6 +183,17 @@ function agregarLinea(partes: (number[] | Uint8Array)[], line: TicketLine): void
   const textoOriginal = typeof line === 'string' ? line : line.text
   const bold = typeof line !== 'string' && !!line.bold
   const big = typeof line !== 'string' && !!line.big
+  // `medium` estaba definido en `TicketLine` (ver services/tickets.ts) y
+  // documentado como ya usado por el ticket de parrilla, pero nunca se había
+  // implementado aquí — este codificador sólo reconocía `bold`/`big`, así que
+  // hasta ahora cualquier línea `medium` se imprimía en tamaño normal sin que
+  // nadie lo notara. Se activa ahora para el requerimiento de carnicería/
+  // parrilla ("letra un poco más pequeña" que el `big` que se usaba antes):
+  // sólo doble-alto (sin doble-ancho), perceptiblemente más grande que el
+  // texto normal pero más compacto que `big`. Si por error una línea trae
+  // ambos flags, `big` gana (mismo criterio que el resto del archivo, que
+  // nunca combina ambos).
+  const medium = typeof line !== 'string' && !!line.medium && !big
 
   const texto = textoOriginal.includes('₡') ? textoOriginal.replace(/₡/g, 'c') : textoOriginal
   if (texto !== textoOriginal) {
@@ -194,11 +205,12 @@ function agregarLinea(partes: (number[] | Uint8Array)[], line: TicketLine): void
   // como dos comandos ESC ! separados (no es un bug nuevo de este archivo,
   // así ya se comporta `node-thermal-printer` en producción).
   if (big) partes.push(TXT_2HEIGHT, TXT_2WIDTH)
+  else if (medium) partes.push(TXT_2HEIGHT)
 
   partes.push(codificarTexto(texto))
   partes.push([LF])
 
-  if (big) partes.push(TXT_NORMAL)
+  if (big || medium) partes.push(TXT_NORMAL)
   if (bold) partes.push(TXT_BOLD_OFF)
 }
 
