@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import WelcomeScreen from './components/screens/WelcomeScreen'
 import MesaSetupScreen from './components/screens/MesaSetupScreen'
 import MenuScreen from './components/screens/MenuScreen'
@@ -6,16 +6,30 @@ import PaymentScreen from './components/screens/PaymentScreen'
 import CedulaScreen from './components/screens/CedulaScreen'
 import RegistroClienteScreen from './components/screens/RegistroClienteScreen'
 import AdminScreen from './components/screens/AdminScreen'
+import IndicadorSyncRemoto from './components/ui/IndicadorSyncRemoto'
 import { useCartStore } from './store/cartStore'
 import { useMesaStore } from './store/mesaStore'
 import type { Cliente } from './types/factura'
 import { useLanguage } from './context/useLanguage'
+// Importado desde `kioskoSyncPolling.ts` (no directamente de `services/kioskoSync.ts`)
+// para garantizar que, al cargar `App.tsx`, también se inicialicen los efectos
+// de ese módulo (polling de mensajes pendientes + resincronización automática
+// al recuperar contacto con el otro kiosko, ver doc ahí).
+import { solicitarResincronizacion } from './services/kioskoSyncPolling'
 
 type Screen = 'welcome' | 'mesaSetup' | 'menu' | 'payment' | 'cedula' | 'registroCliente' | 'admin'
 
 function App() {
   const { setLanguage } = useLanguage()
   const [screen, setScreen] = useState<Screen>('welcome')
+
+  // Requerimiento "Resincronización automática": al arrancar la PWA, este
+  // kiosko consulta el estado completo (catálogo + mesas) del otro kiosko
+  // (ver `services/kioskoSync.ts`). Una sola vez por carga de la pestaña,
+  // sin depender de en qué pantalla quede el usuario después.
+  useEffect(() => {
+    solicitarResincronizacion()
+  }, [])
   const [cedulaPendiente, setCedulaPendiente] = useState('')
   const clearCart = useCartStore((s) => s.clear)
   const setCliente = useCartStore((s) => s.setCliente)
@@ -85,32 +99,27 @@ function App() {
     setScreen('menu')
   }
 
+  let contenido
   if (screen === 'admin') {
-    return <AdminScreen onBack={() => setScreen('welcome')} />
-  }
-
-  if (screen === 'registroCliente') {
-    return (
+    contenido = <AdminScreen onBack={() => setScreen('welcome')} />
+  } else if (screen === 'registroCliente') {
+    contenido = (
       <RegistroClienteScreen
         cedula={cedulaPendiente}
         onBack={() => setScreen('cedula')}
         onGuardado={handleRegistroGuardado}
       />
     )
-  }
-
-  if (screen === 'cedula') {
-    return (
+  } else if (screen === 'cedula') {
+    contenido = (
       <CedulaScreen
         onBack={() => setScreen('payment')}
         onEncontrado={handleCedulaEncontrado}
         onNoEncontrado={handleCedulaNoEncontrado}
       />
     )
-  }
-
-  if (screen === 'payment') {
-    return (
+  } else if (screen === 'payment') {
+    contenido = (
       <PaymentScreen
         onBack={() => setScreen('menu')}
         onSolicitarFactura={handleSolicitarFactura}
@@ -118,17 +127,21 @@ function App() {
         onVolverInicio={handleVolverInicio}
       />
     )
+  } else if (screen === 'menu') {
+    contenido = <MenuScreen onContinuarAlPago={handleContinuarAlPago} onCancelarOrden={handleCancelarOrdenDesdeMenu} />
+  } else if (screen === 'mesaSetup') {
+    contenido = <MesaSetupScreen onContinuar={handleMesaSetupContinuar} onCancelar={handleVolverInicio} />
+  } else {
+    contenido = <WelcomeScreen onStart={() => setScreen('mesaSetup')} onOpenAdmin={() => setScreen('admin')} />
   }
 
-  if (screen === 'menu') {
-    return <MenuScreen onContinuarAlPago={handleContinuarAlPago} onCancelarOrden={handleCancelarOrdenDesdeMenu} />
-  }
-
-  if (screen === 'mesaSetup') {
-    return <MesaSetupScreen onContinuar={handleMesaSetupContinuar} onCancelar={handleVolverInicio} />
-  }
-
-  return <WelcomeScreen onStart={() => setScreen('mesaSetup')} onOpenAdmin={() => setScreen('admin')} />
+  return (
+    <>
+      {contenido}
+      {/* Requerimiento "Modo autónomo": visible en cualquier pantalla, no sólo en una específica. */}
+      <IndicadorSyncRemoto />
+    </>
+  )
 }
 
 export default App

@@ -194,25 +194,26 @@ export function formatMontoDatafono(monto: number): string {
 
 /**
  * Convierte el consecutivo legible del kiosko (`generarConsecutivo()`, ej.
- * "000000007", 9 dígitos sin guiones — ver `services/consecutivo.ts`) en un
- * `invoice` compatible con Transaction Manager.
+ * "010000000007", 12 dígitos sin guiones: 2 de prefijo de caja + 10 de
+ * consecutivo incremental propio de esa caja — ver `services/consecutivo.ts`)
+ * en un `invoice` compatible con Transaction Manager.
  *
  * Hallazgo de auditoría (esquema anterior con guiones, ej.
  * "01-2026-10-00007"): se enviaba ese string tal cual como `invoice`, que es
  * justo el campo que Transaction Manager rechazaba con "Parámetros
  * inválidos en el request" (categoría `rechazo-generico`) — BAC exige un
  * string puramente numérico de máximo 12 caracteres (ver ejemplo
- * documentado "112234"). El esquema actual ya es puramente numérico de 9
- * dígitos, así que no necesita transformación: cae directo en la rama de
- * respaldo (quita caracteres no numéricos — ninguno en este caso — y toma
- * los últimos 12), que deja pasar el consecutivo tal cual. Como
- * `obtenerNumeroFactura()` en `PaymentScreen` cachea el consecutivo en un
- * ref y lo reutiliza en cada reintento de la MISMA orden, un reintento
- * manda el mismo `invoice` (correcto: sigue siendo la misma transacción) y
- * una orden nueva siempre produce uno distinto.
+ * documentado "112234"). El esquema actual ya es puramente numérico y mide
+ * exactamente 12 dígitos, así que no necesita transformación: cae directo en
+ * la rama de respaldo (quita caracteres no numéricos — ninguno en este
+ * caso — y toma los últimos 12), que deja pasar el consecutivo completo, sin
+ * truncarse. Como `obtenerNumeroFactura()` en `PaymentScreen` cachea el
+ * consecutivo en un ref y lo reutiliza en cada reintento de la MISMA orden,
+ * un reintento manda el mismo `invoice` (correcto: sigue siendo la misma
+ * transacción) y una orden nueva siempre produce uno distinto.
  *
  * La rama con guiones (`match`) se conserva por compatibilidad con ventas ya
- * encoladas con el esquema anterior (ej. en `offlineQueue` antes de este
+ * encoladas con esquemas anteriores (ej. en `offlineQueue` antes de este
  * cambio) que pudieran reintentarse tras una actualización del kiosko.
  */
 export function formatInvoiceDatafono(numeroFacturaKiosko: string): string {

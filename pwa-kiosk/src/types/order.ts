@@ -26,10 +26,15 @@ export interface OrderItem {
 
 export interface Venta {
   /**
-   * Identificador interno de la orden dentro del PWA: el consecutivo
-   * global generado al confirmar la orden, número de 9 dígitos que arranca
-   * en "000000000" y nunca se reinicia (ej. "000000005"), ver
-   * `services/consecutivo.ts` -> `generarConsecutivo()`. Se usa como clave
+   * Identificador interno de la orden dentro del PWA: el consecutivo propio
+   * de la caja/kiosko que confirmó la orden, generado con
+   * `services/consecutivo.ts` -> `generarConsecutivo()`. Número de 12
+   * dígitos puramente numérico: 2 dígitos de prefijo de caja + 10 dígitos de
+   * consecutivo incremental (ej. "010000000005" para la quinta orden de
+   * K001), que arranca en "0000000000" y nunca se reinicia. NO es un
+   * consecutivo global compartido entre cajas — cada caja lleva su propio
+   * contador y su propio prefijo, así que dos cajas nunca producen el mismo
+   * `id` (ver comentario de archivo en `consecutivo.ts`). Se usa como clave
    * primaria en la cola offline (`offlineQueue.ts`) y se imprime en la parte
    * superior de los tiquetes (encabezado "Factura de caja <id>" del
    * comprobante del cliente, ver `tickets.ts` -> `encabezadoCliente`).

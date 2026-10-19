@@ -16,6 +16,7 @@ import { useMesaStore } from '../../store/mesaStore'
 import { generarFactura, registrarVentaSimple } from '../../services/facturacion'
 import { CAJA_ID, generarConsecutivo } from '../../services/consecutivo'
 import { encolarVenta } from '../../services/offlineQueue'
+import { bloquearMesa } from '../../services/mesaLocks'
 import { enviarVentaACodisa } from '../../services/codisa'
 import { enviarVentaAAwsIot } from '../../services/awsIot'
 import { construirPedidoWsDf, enviarPedidoWsDf, validarPedidoWsDf } from '../../services/wsdf'
@@ -342,6 +343,12 @@ export default function PaymentScreen({
     encolarVenta(nuevaVenta)
     enviarVentaACodisa(nuevaVenta)
     enviarVentaAAwsIot(nuevaVenta)
+    // Sincroniza la ocupación de esta mesa con el otro kiosko (requerimiento
+    // "Sincronización de mesas"): éste es el único punto donde el
+    // identificador de mesa (`nuevaVenta.mesa`) y el consecutivo de la orden
+    // que la ocupa (`nuevaVenta.id`) se conocen juntos, ver
+    // `bloquearMesa` en `services/mesaLocks.ts`.
+    bloquearMesa(nuevaVenta.mesa, nuevaVenta.id)
 
     // Envío del pedido a Codisa (WS DF) directo al backend, sin pop-up de
     // verificación ni de resultado (ver requerimiento): se arma y valida el
@@ -733,7 +740,15 @@ export default function PaymentScreen({
               <section className="flex h-full min-h-0 flex-col gap-2 rounded-2xl bg-white p-3 shadow-sm shadow-wood-900/10">
                 <h2 className="text-base font-bold text-wood-900">{t('payment.suggestionsTitle')}</h2>
                 <div className="grid min-h-0 flex-1 grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4">
-                  {SUGERENCIAS.map((product) => (
+                  {/* `!product.agotado`: requerimiento "Disponibilidad de
+                      productos" ("impedir venta") también aplica a este
+                      upsell — `SUGERENCIAS` es una constante a nivel de
+                      módulo (filtrada sólo por categoría al definirse), así
+                      que el filtro por `agotado` debe hacerse aquí, en el
+                      render, para reflejar cambios de disponibilidad en
+                      tiempo real (admin local o sincronizado desde el otro
+                      kiosko, ver `services/catalogOverrides.ts`). */}
+                  {SUGERENCIAS.filter((product) => !product.agotado).map((product) => (
                     <button
                       key={product.id}
                       type="button"

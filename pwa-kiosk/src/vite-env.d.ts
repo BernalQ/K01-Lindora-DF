@@ -18,6 +18,10 @@ interface ImportMetaEnv {
   readonly VITE_CODISA_ID_TIENDA?: string
   /** Token compartido para autenticarse contra print-bridge (ver `services/kioskToken.ts` y `KIOSK_TOKEN` en `print-bridge/.env.example`). */
   readonly VITE_KIOSK_TOKEN?: string
+  /** IP de la máquina del kiosko K001, para la sincronización directa entre kioskos (ver `services/kioskoSyncConfig.ts`). */
+  readonly VITE_IP_KIOSKO_K001?: string
+  /** IP de la máquina del kiosko K002, mismo propósito que la anterior. */
+  readonly VITE_IP_KIOSKO_K002?: string
 }
 
 interface ImportMeta {

@@ -335,7 +335,10 @@ function TerminoBody({ product, onClose, onConfirmar }: PersonalizarModalProps) 
               />
             ) : seleccionUnica ? (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {GUARNICIONES.map((g) => {
+                {/* `!g.agotado`: requerimiento "Disponibilidad de productos"
+                    ("impedir venta") también aplica a guarniciones, ver
+                    `services/catalogOverrides.ts`/`services/catalogSync.ts`. */}
+                {GUARNICIONES.filter((g) => !g.agotado).map((g) => {
                   const seleccion = guarniciones.find((sel) => sel.id === g.id)
                   const selected = Boolean(seleccion)
                   return (
@@ -359,7 +362,8 @@ function TerminoBody({ product, onClose, onConfirmar }: PersonalizarModalProps) 
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {GUARNICIONES.map((g) => {
+                {/* `!g.agotado`: ver comentario en el bloque `seleccionUnica` arriba. */}
+                {GUARNICIONES.filter((g) => !g.agotado).map((g) => {
                   const count = contarGuarnicion(g.id)
                   const puedeAgregar = guarniciones.length < maxGuarniciones
                   const opcionesElegidas = guarniciones

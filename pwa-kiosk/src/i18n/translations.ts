@@ -274,6 +274,9 @@ const dictionaries = {
     'codisaOrden.tituloErrorRed': 'No se pudo contactar a Codisa ✖',
     'codisaOrden.tituloEnCurso': 'Envío a Codisa en curso',
     'codisaOrden.tituloTiempoAgotado': 'Tiempo de espera agotado al enviar a Codisa',
+
+    /** Indicador flotante (ver `components/ui/IndicadorSyncRemoto.tsx`): requerimiento "Modo autónomo" — se muestra cuando este kiosko no logra contactar al otro kiosko. */
+    'sync.operandoSinSincronizacion': 'Operando sin sincronización',
   },
   en: {
     'welcome.tapToStart': 'Tap to start',
@@ -541,6 +544,8 @@ const dictionaries = {
     'codisaOrden.tituloErrorRed': 'Could not reach Codisa ✖',
     'codisaOrden.tituloEnCurso': 'Codisa submission in progress',
     'codisaOrden.tituloTiempoAgotado': 'Request to Codisa timed out',
+
+    'sync.operandoSinSincronizacion': 'Operating without synchronization',
   },
 } as const
 

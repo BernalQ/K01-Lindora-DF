@@ -8,6 +8,7 @@ import { facturaRouter } from './routes/factura.js'
 import { ventasRouter } from './routes/ventas.js'
 import { systemRouter } from './routes/system.js'
 import { FACTURAS_DIR, asegurarCarpetaDatos } from './data/paths.js'
+import { iniciarServidorKioskoSync } from './kioskoSync/server.js'
 
 const app = express()
 const PORT = Number(process.env.PORT ?? 4000)
@@ -67,3 +68,9 @@ app.use(systemRouter)
 app.listen(PORT, () => {
   console.log(`[print-bridge] escuchando en http://localhost:${PORT}`)
 })
+
+// Servidor DISTINTO (puerto 3005 por defecto) para sincronización directa
+// entre las dos máquinas de kiosko — ver `kioskoSync/server.ts`. Mismo
+// proceso Node que el print-bridge normal, pero sin su guard de token (red
+// interna, sólo habla con la IP conocida del otro kiosko).
+iniciarServidorKioskoSync()

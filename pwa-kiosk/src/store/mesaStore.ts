@@ -51,6 +51,11 @@ export const useMesaStore = create<MesaState>((set, get) => ({
   iniciar: (mesaId, compartida) => {
     // Bloquea el identificador por 30 minutos para que no pueda elegirse de
     // nuevo en otra sesión hasta que expire (ver `services/mesaLocks.ts`).
+    // Sin `orderId` todavía (no existe ninguna orden en este punto, ver
+    // comentario de `cancelar` abajo), así que este bloqueo inicial sigue
+    // siendo sólo local a este kiosko — se sincroniza con el otro kiosko en
+    // cuanto se confirma la primera orden de esta mesa (ver
+    // `PaymentScreen.tsx` -> `bloquearMesa(nuevaVenta.mesa, nuevaVenta.id)`).
     bloquearMesa(mesaId)
     set({ activa: true, compartida, mesaId, ordenes: [] })
   },
@@ -60,6 +65,9 @@ export const useMesaStore = create<MesaState>((set, get) => ({
   cerrar: () => set({ activa: false, compartida: false, mesaId: '', ordenes: [] }),
 
   cancelar: () => {
+    // `liberarMesa` ya sincroniza la liberación con el otro kiosko de
+    // inmediato (mensaje `unlockTable`, ver `services/mesaLocks.ts`), para
+    // que no se quede esperando a que venzan los 30 minutos de su lado.
     liberarMesa(get().mesaId)
     set({ activa: false, compartida: false, mesaId: '', ordenes: [] })
   },

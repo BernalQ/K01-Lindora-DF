@@ -89,7 +89,12 @@ export default function MenuScreen({ onContinuarAlPago, onCancelarOrden }: MenuS
     }
   }, [mesaId, setMesa])
 
-  const productos = PRODUCTS.filter((p) => p.categoryId === categoriaActiva)
+  // `!p.agotado` oculta el producto del menú del cliente (requerimiento
+  // "Disponibilidad de productos": "K002 debe: ... ocultar producto, impedir
+  // venta" — ver `services/catalogOverrides.ts`/`services/catalogSync.ts`).
+  // `AdminScreen` filtra sólo por categoría a propósito: el administrador
+  // necesita ver y poder reactivar los productos agotados.
+  const productos = PRODUCTS.filter((p) => p.categoryId === categoriaActiva && !p.agotado)
   const total = cartTotal(lines)
   const puedeContinuar = lines.length > 0 && mesa.trim().length > 0
 
