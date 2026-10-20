@@ -129,7 +129,18 @@ function marcarEnviado(ventaId: string): void {
   }
 }
 
-/** Intento de red puro (sin tocar `localStorage`): un solo POST, con timeout. */
+/**
+ * Intento de red puro (sin tocar `localStorage`): un solo POST, con timeout.
+ *
+ * Cada fallo se imprime con `console.error` (status HTTP + cuerpo de la
+ * respuesta, o el motivo si ni siquiera hubo respuesta) — antes esto quedaba
+ * oculto: sólo se guardaba un mensaje genérico en `localStorage` para el
+ * panel de Admin, sin nada visible en la consola del navegador en el
+ * momento real de la falla. Diagnóstico pedido por el equipo de AWS al
+ * revisar un rechazo silencioso (403 por `x-api-key` ausente/incorrecta en
+ * un build viejo, ver historial) — con este log, un problema similar a
+ * futuro se detecta de inmediato abriendo las DevTools del kiosko.
+ */
 async function intentarEnvioAws(payload: WsDfPayload): Promise<{ ok: boolean; error?: string }> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
@@ -140,12 +151,19 @@ async function intentarEnvioAws(payload: WsDfPayload): Promise<{ ok: boolean; er
       body: JSON.stringify(payload),
       signal: controller.signal,
     })
-    if (!res.ok) return { ok: false, error: `Error HTTP ${res.status}` }
+    if (!res.ok) {
+      const cuerpo = await res.text().catch(() => '(no se pudo leer el cuerpo de la respuesta)')
+      console.error(`[aws-ventas] AWS respondió con error HTTP ${res.status} para la venta "${payload.pedido.id}":`, cuerpo)
+      return { ok: false, error: `Error HTTP ${res.status}: ${cuerpo}` }
+    }
     return { ok: true }
   } catch (err) {
     if ((err as Error).name === 'AbortError') {
-      return { ok: false, error: `Tiempo de espera agotado (${TIMEOUT_MS / 1000}s)` }
+      const mensaje = `Tiempo de espera agotado (${TIMEOUT_MS / 1000}s)`
+      console.error(`[aws-ventas] ${mensaje} al enviar la venta "${payload.pedido.id}" a AWS.`)
+      return { ok: false, error: mensaje }
     }
+    console.error(`[aws-ventas] No se pudo contactar AWS para la venta "${payload.pedido.id}":`, err)
     return { ok: false, error: `No se pudo contactar AWS: ${(err as Error).message}` }
   } finally {
     clearTimeout(timeoutId)
