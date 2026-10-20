@@ -37,10 +37,11 @@
  */
 
 /**
- * Clave de `localStorage` donde `services/cajaIdDetect.ts` persiste el
- * último `CAJA_ID` detectado AUTOMÁTICAMENTE según la IP real de esta
- * máquina (ver comentario de `CAJA_ID` abajo). Exportada (no sólo usada
- * aquí) porque `cajaIdDetect.ts` necesita escribir en esta misma clave.
+ * Clave de `localStorage` donde se persiste el `CAJA_ID` elegido A MANO por
+ * el operador en el panel de administración (ver comentario de `CAJA_ID`
+ * abajo y `PanelKiosko` en `components/screens/AdminScreen.tsx`). Exportada
+ * (no sólo usada aquí) porque `AdminScreen.tsx` necesita escribir en esta
+ * misma clave.
  */
 export const STORAGE_KEY_CAJA_ID = 'kiosko:cajaId'
 
@@ -56,21 +57,24 @@ export const STORAGE_KEY_CAJA_ID = 'kiosko:cajaId'
  *
  * Se resuelve, en orden de prioridad:
  *   1. `VITE_CAJA_ID` en `.env` — override manual explícito; si el operador
- *      lo configura a mano, se respeta sin más preguntas y NUNCA se
- *      autodetecta (ver `services/cajaIdDetect.ts`).
- *   2. El último valor autodetectado y cacheado en `localStorage` (ver
+ *      lo configura a mano, se respeta sin más preguntas.
+ *   2. El valor elegido A MANO por el operador en el panel de
+ *      administración ("Kiosko" en el menú de `AdminScreen.tsx`, ver
+ *      `PanelKiosko` ahí), cacheado en `localStorage` (ver
  *      `STORAGE_KEY_CAJA_ID` arriba) — así, en cada recarga posterior, el
- *      valor correcto está disponible de inmediato (síncrono) sin depender
- *      de una consulta de red.
- *   3. `'K001'` por defecto, mientras `cajaIdDetect.ts` hace su primera
- *      detección en segundo plano (requerimiento: "asignar el nombre del
- *      kiosko consultando la IP address" — ver ese archivo para el cómo).
+ *      valor correcto está disponible de inmediato (síncrono), sin depender
+ *      de ninguna consulta de red.
+ *   3. `'K001'` por defecto, hasta que el operador elija el kiosko correcto
+ *      una vez desde el panel de administración.
  *
- * Es decir: NO hace falta configurar nada a mano en la mayoría de los casos
- * — basta con que las dos máquinas tengan la IP que les corresponde (ver
- * `.env.example` -> `VITE_IP_KIOSKO_K001`/`VITE_IP_KIOSKO_K002`) y
- * `cajaIdDetect.ts` detecta e inyecta el `CAJA_ID` correcto solo, en el
- * primer arranque de cada máquina.
+ * Esquema anterior (retirado por simplicidad, requerimiento: "hacerlo más
+ * simple, sin involucrar el print-bridge"): la app consultaba
+ * automáticamente la IP real de la máquina vía el print-bridge local y la
+ * comparaba contra una tabla IP→CAJA_ID. Ahora ese único paso de
+ * configuración es manual y explícito: en cada máquina nueva, el operador
+ * abre "ADMIN" -> "Kiosko" una vez y elige 01 o 02; esa elección queda
+ * guardada localmente y sobrevive recargas y reinicios del kiosko sin
+ * volver a pedirse.
  */
 function resolverCajaIdInicial(): string {
   const override = import.meta.env.VITE_CAJA_ID

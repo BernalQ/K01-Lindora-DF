@@ -37,20 +37,3 @@ export function ipOtroKiosko(): string {
   const otraCaja = Object.keys(IP_KIOSKOS).find((caja) => caja !== CAJA_ID)
   return otraCaja ? IP_KIOSKOS[otraCaja] : ''
 }
-
-/**
- * Determina a cuál `CAJA_ID` conocido corresponde una IP dada, buscando en
- * la misma tabla `IP_KIOSKOS` de arriba (la fuente de verdad única de qué IP
- * le toca a cada kiosko). `undefined` si la IP no coincide con ninguno de los
- * dos kioskos conocidos (ej. la máquina está en otra subred, o es una IP de
- * un adaptador virtual/VPN).
- *
- * Usado por `services/cajaIdDetect.ts` para la asignación AUTOMÁTICA de
- * `CAJA_ID` según la IP real de esta máquina (requerimiento: "asignar el
- * nombre del kiosko consultando la IP address — si es .250 es K001 y si es
- * .251 es K002"), en vez de depender de que alguien configure `VITE_CAJA_ID`
- * a mano en cada terminal.
- */
-export function cajaIdPorIp(ip: string): string | undefined {
-  return Object.entries(IP_KIOSKOS).find(([, valorIp]) => valorIp === ip)?.[0]
-}

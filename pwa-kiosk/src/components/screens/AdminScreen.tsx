@@ -12,6 +12,7 @@ import {
   type PrinterId,
 } from '../../services/tickets'
 import { DATAFONO_CONFIG, enviarTransaccionDatafono } from '../../services/datafono'
+import { CAJA_ID, STORAGE_KEY_CAJA_ID } from '../../services/consecutivo'
 import type { Product } from '../../types/catalog'
 import type { VentaEnCola } from '../../types/order'
 import type { ResultadoDatafono } from '../../types/datafono'
@@ -26,15 +27,18 @@ interface AdminScreenProps {
 const PIN_VALIDO = '123456'
 const LARGO_PIN = 6
 
-type VistaAdmin = 'menu' | 'precio' | 'agotado' | 'ordenes' | 'cierre'
+type VistaAdmin = 'menu' | 'precio' | 'agotado' | 'ordenes' | 'cierre' | 'kiosko'
 
 /**
  * Pantalla de administración del kiosko, accesible desde el botón "ADMIN"
  * de `WelcomeScreen`. Queda protegida por una clave numérica de 6 dígitos
- * (`PinGate`); una vez desbloqueada, ofrece tres paneles:
+ * (`PinGate`); una vez desbloqueada, ofrece varios paneles:
  * - Cambiar precio de un producto.
  * - Marcar/desmarcar un producto como agotado.
  * - Ver las órdenes registradas hoy, con opción de reenviar impresión.
+ * - Cierre de caja.
+ * - Elegir cuál de los dos kioskos físicos es esta máquina (`PanelKiosko`
+ *   más abajo en este archivo).
  *
  * Precio y agotado se aplican mutando directamente el array `PRODUCTS`
  * compartido (ver `services/catalogOverrides.ts`), así que el resto de la
@@ -70,6 +74,7 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
         {vista === 'agotado' && <PanelMarcarAgotado />}
         {vista === 'ordenes' && <PanelOrdenesDelDia />}
         {vista === 'cierre' && <PanelCierreCaja />}
+        {vista === 'kiosko' && <PanelKiosko />}
       </main>
     </div>
   )
@@ -180,6 +185,7 @@ function MenuAdmin({ onSeleccionar }: { onSeleccionar: (vista: VistaAdmin) => vo
     { vista: 'agotado', label: t('admin.menuMarcarAgotado') },
     { vista: 'ordenes', label: t('admin.menuVerOrdenes') },
     { vista: 'cierre', label: t('admin.menuCierreCaja') },
+    { vista: 'kiosko', label: t('admin.menuKiosko') },
   ]
 
   return (
@@ -856,6 +862,125 @@ function PanelCierreCaja() {
           onCerrar={() => setResultadoTm(null)}
           tituloAprobadaOverride="admin.cierreCompletado"
         />
+      )}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Panel: elegir cuál de los dos kioskos físicos es ESTA máquina.      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Los dos kioskos físicos conocidos hoy (ver `IP_KIOSKOS` en
+ * `services/kioskoSyncConfig.ts` — misma tabla que usa la sincronización
+ * directa entre kioskos, ver `services/kioskoTransport.ts`). `numero` es el
+ * mismo valor de 2 dígitos que ya se usa en todos lados para identificar la
+ * caja (consecutivo de orden, ticket del cliente, badge de
+ * `WelcomeScreen.tsx` — ver `PREFIJO_CAJA` en `services/consecutivo.ts`), así
+ * que esta pantalla no introduce una tercera forma de numerar kioskos.
+ */
+const KIOSKOS_DISPONIBLES: { cajaId: string; numero: string }[] = [
+  { cajaId: 'K001', numero: '01' },
+  { cajaId: 'K002', numero: '02' },
+]
+
+/**
+ * Reemplaza el esquema anterior de detección automática por IP (que
+ * consultaba al print-bridge local, ver hallazgo de auditoría: "hacerlo más
+ * simple, sin involucrar el print-bridge"): acá el operador elige a mano,
+ * una sola vez por máquina, cuál de los dos kioskos físicos es esta
+ * terminal. La elección se guarda en `localStorage` (`STORAGE_KEY_CAJA_ID`,
+ * ver `services/consecutivo.ts`) y sobrevive recargas y reinicios sin volver
+ * a pedirse.
+ *
+ * `CAJA_ID` se resuelve una sola vez al cargar el módulo (ver comentario de
+ * `consecutivo.ts`), así que un cambio de kiosko sólo toma efecto real tras
+ * recargar la página — por eso el botón de confirmar recarga de inmediato,
+ * igual que hacía el esquema anterior tras detectar un cambio.
+ */
+function PanelKiosko() {
+  const { t } = useLanguage()
+  const [pendiente, setPendiente] = useState<string | null>(null)
+
+  const elegir = (cajaId: string) => {
+    if (cajaId === CAJA_ID) return
+    setPendiente(cajaId)
+  }
+
+  const confirmar = () => {
+    if (!pendiente) return
+    try {
+      localStorage.setItem(STORAGE_KEY_CAJA_ID, pendiente)
+    } catch {
+      // localStorage no disponible (modo privado, cuota llena, etc.): se
+      // recarga igual, mismo criterio "fail open" que el resto de la app
+      // (ver `consecutivo.ts`) — en el peor caso, la elección no queda
+      // guardada y hay que repetirla.
+    }
+    window.location.reload()
+  }
+
+  const kioskoPendiente = KIOSKOS_DISPONIBLES.find((k) => k.cajaId === pendiente)
+
+  return (
+    <div className="mx-auto flex max-w-md flex-col gap-6">
+      <div className="flex flex-col gap-1">
+        <h2 className="text-lg font-bold text-wood-900">{t('admin.kioskoTitle')}</h2>
+        <p className="text-sm text-wood-500">{t('admin.kioskoSubtitle')}</p>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        {KIOSKOS_DISPONIBLES.map(({ cajaId, numero }) => {
+          const activo = cajaId === CAJA_ID
+          return (
+            <button
+              key={cajaId}
+              type="button"
+              onClick={() => elegir(cajaId)}
+              aria-pressed={activo}
+              className={`flex items-center justify-between gap-3 rounded-2xl px-6 py-6 text-left text-lg font-bold shadow-md transition-transform active:scale-98 ${
+                activo
+                  ? 'bg-brand-red text-white shadow-brand-red/20'
+                  : 'bg-wood-900 text-cream-50 shadow-wood-900/10'
+              }`}
+            >
+              {t('welcome.kioskoId', { numero })}
+              {activo && (
+                <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-bold tracking-wide uppercase">
+                  {t('admin.kioskoActivo')}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {kioskoPendiente && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl bg-white p-6 text-center shadow-2xl">
+            <h2 className="text-xl font-bold text-wood-900">{t('admin.kioskoConfirmarTitulo')}</h2>
+            <p className="text-base text-wood-600">
+              {t('admin.kioskoConfirmarMensaje', { numero: kioskoPendiente.numero })}
+            </p>
+            <div className="flex w-full flex-col gap-2 pt-1">
+              <button
+                type="button"
+                onClick={confirmar}
+                className="w-full rounded-2xl bg-brand-red py-4 text-base font-bold text-white transition-transform active:scale-98"
+              >
+                {t('admin.kioskoConfirmarSi')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendiente(null)}
+                className="w-full rounded-2xl bg-wood-100 py-4 text-base font-bold text-wood-800 transition-transform active:scale-98"
+              >
+                {t('admin.kioskoConfirmarNo')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

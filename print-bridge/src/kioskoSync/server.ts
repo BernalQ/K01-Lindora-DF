@@ -1,6 +1,5 @@
 import express from 'express'
 import cors from 'cors'
-import os from 'node:os'
 import { pushEnvelope, drainEnvelopes } from './queue.js'
 
 /**
@@ -43,26 +42,6 @@ export function iniciarServidorKioskoSync(): void {
 
   app.get('/kiosko-sync/health', (_req, res) => {
     res.json({ ok: true, service: 'kiosko-sync' })
-  })
-
-  /**
-   * Asignación automática de `CAJA_ID` por IP (ver `services/cajaIdDetect.ts`
-   * en `pwa-kiosk`): el navegador no tiene forma estándar de preguntar "¿cuál
-   * es mi IP en la red local?", pero Node sí, vía `os.networkInterfaces()`.
-   * Se devuelven TODAS las IPv4 no-internas de esta máquina (puede haber más
-   * de un adaptador, ej. Ethernet + Wi-Fi) y el lado de la PWA decide cuál
-   * (si alguna) coincide con un kiosko conocido.
-   */
-  app.get('/kiosko-sync/whoami', (_req, res) => {
-    const ips: string[] = []
-    for (const infos of Object.values(os.networkInterfaces())) {
-      for (const info of infos ?? []) {
-        if (info.family === 'IPv4' && !info.internal) {
-          ips.push(info.address)
-        }
-      }
-    }
-    res.json({ ips })
   })
 
   app.post('/kiosko-sync/incoming', (req, res) => {

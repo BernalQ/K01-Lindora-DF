@@ -167,6 +167,7 @@ const dictionaries = {
     'admin.menuMarcarAgotado': 'Marcar producto como Agotado',
     'admin.menuVerOrdenes': 'Ver órdenes del día',
     'admin.menuCierreCaja': 'Cierre de Caja',
+    'admin.menuKiosko': 'Kiosko',
     'admin.precioSeleccionar': 'Selecciona un producto',
     'admin.precioActual': 'Precio actual: {{precio}}',
     'admin.precioNuevoLabel': 'Nuevo precio (₡)',
@@ -209,6 +210,15 @@ const dictionaries = {
     'admin.cierreConfirmarNo': 'Cancelar',
     'admin.cierreEnviandoTm': 'Enviando cierre al datáfono…',
     'admin.cierreCompletado': '✔ Cierre de caja completado correctamente',
+    'admin.kioskoTitle': 'Elegir kiosko',
+    'admin.kioskoSubtitle':
+      'Indica cuál de los dos kioskos físicos es esta máquina. Se usa para numerar las órdenes, identificar esta caja en los tiquetes impresos y mostrar el identificador en la pantalla de bienvenida.',
+    'admin.kioskoActivo': 'Activo',
+    'admin.kioskoConfirmarTitulo': '¿Cambiar de kiosko?',
+    'admin.kioskoConfirmarMensaje':
+      'Esta máquina pasará a identificarse como Kiosko {{numero}}. La página se recargará para aplicar el cambio.',
+    'admin.kioskoConfirmarSi': 'Sí, cambiar',
+    'admin.kioskoConfirmarNo': 'Cancelar',
 
     'mesaSetup.pregunta': 'La misma mesa va a tener diferentes ordenes pagadas por separado?',
     'mesaSetup.si': 'Sí',
@@ -426,6 +436,7 @@ const dictionaries = {
     'admin.menuMarcarAgotado': 'Mark product as Sold Out',
     'admin.menuVerOrdenes': "View today's orders",
     'admin.menuCierreCaja': 'Cash Register Closing',
+    'admin.menuKiosko': 'Kiosk',
     'admin.precioSeleccionar': 'Select a product',
     'admin.precioActual': 'Current price: {{precio}}',
     'admin.precioNuevoLabel': 'New price (₡)',
@@ -468,6 +479,15 @@ const dictionaries = {
     'admin.cierreConfirmarNo': 'Cancel',
     'admin.cierreEnviandoTm': 'Sending closing to card reader…',
     'admin.cierreCompletado': '✔ Cash register closing completed successfully',
+    'admin.kioskoTitle': 'Choose kiosk',
+    'admin.kioskoSubtitle':
+      'Indicate which of the two physical kiosks this machine is. Used to number orders, identify this register on printed tickets, and show the identifier on the welcome screen.',
+    'admin.kioskoActivo': 'Active',
+    'admin.kioskoConfirmarTitulo': 'Change kiosk?',
+    'admin.kioskoConfirmarMensaje':
+      'This machine will now identify itself as Kiosk {{numero}}. The page will reload to apply the change.',
+    'admin.kioskoConfirmarSi': 'Yes, change',
+    'admin.kioskoConfirmarNo': 'Cancel',
 
     'mesaSetup.pregunta': 'The same table will have different orders paid separately?',
     'mesaSetup.si': 'Yes',
