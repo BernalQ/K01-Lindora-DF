@@ -334,10 +334,17 @@ const CARNICERIA_RENOMBRE: Record<string, string> = {
 /**
  * Items que no son "a la parrilla" pero que la carnicería también debe
  * preparar, por lo que se incluyen en su ticket bajo su propio nombre (sin
- * renombrar). Ej.: los chicharrones, que son entradas pero se preparan en
- * carnicería.
+ * renombrar).
+ *
+ * Antes incluía 'chicharron-carne' y 'chicharron-panza' ("Chicharrón de
+ * Carne"/"Chicharrón de Panzada") — requerimiento vigente: removerlos
+ * completamente del tiquete de Carnicería (NO del catálogo, de la venta, de
+ * Codisa ni del tiquete de Cliente — sólo de este tiquete). Al no estar en
+ * este set (y no ser categoría "parrilla"), `nombreCarniceria` los excluye de
+ * este ticket sin tocar nada más: siguen apareciendo normalmente en el
+ * catálogo, la orden, el tiquete de Cliente y el envío a Codisa.
  */
-const CARNICERIA_INCLUIR_EXTRA = new Set(['chicharron-carne', 'chicharron-panza'])
+const CARNICERIA_INCLUIR_EXTRA = new Set<string>([])
 
 /**
  * Nombre bajo el cual se agrupa un item en el ticket de carnicería: el de

@@ -229,15 +229,12 @@ export const PRODUCTS: Product[] = [
     codigoArticulo: '4510',
   },
   {
-    // Sin código: el documento fuente ("Catalogo de articulos restaurante
-    // 2026") repite el código "4400" tanto para "Gallo de Chorizo" como
-    // para "Pan Parrillero" (ver fila de Pan Parrillero en el bloque "Para
-    // Comenzar" del xlsx) — parece un error de digitación en el origen, ya
-    // que un mismo código de artículo no puede identificar dos productos
-    // distintos ante Codisa. Se deja sin `codigoArticulo` a propósito
-    // (en vez de asumir el 4400 y arriesgar una venta mal clasificada) hasta
-    // que el restaurante confirme el código real; mientras tanto, el envío
-    // a Codisa usa el `id` interno como respaldo (ver `services/wsdf.ts`).
+    // El documento fuente ("Catalogo de articulos restaurante 2026") repetía
+    // el código "4400" tanto para "Gallo de Chorizo" como para "Pan
+    // Parrillero" (ver comentario histórico que vivía acá) — confirmado por
+    // el restaurante: "Pan Parrillero" usa el código propio "4401", distinto
+    // del "4400" de "Gallo de Chorizo" (ver ese producto arriba), resolviendo
+    // la ambigüedad sin arriesgar una venta mal clasificada ante Codisa.
     id: 'pan-parrillero',
     categoryId: 'comenzar',
     name: 'Pan Parrillero',
@@ -245,6 +242,7 @@ export const PRODUCTS: Product[] = [
     price: 2000,
     requiresTermino: false,
     includedGuarniciones: 0,
+    codigoArticulo: '4401',
   },
   {
     id: 'elote',
