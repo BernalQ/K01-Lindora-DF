@@ -10,6 +10,8 @@
  * si no están definidas, cada archivo cae a su valor por defecto documentado.
  */
 interface ImportMetaEnv {
+  /** Identificador de ESTE kiosko/caja (ej. "K001"/"K002", ver `services/consecutivo.ts`). Permite reusar el mismo build en ambas terminales. */
+  readonly VITE_CAJA_ID?: string
   readonly VITE_IP_IMPRESORA_CLIENTE?: string
   readonly VITE_IP_IMPRESORA_CARNICERIA?: string
   readonly VITE_IP_IMPRESORA_PARRILLA?: string

@@ -37,17 +37,55 @@
  */
 
 /**
+ * Clave de `localStorage` donde `services/cajaIdDetect.ts` persiste el
+ * último `CAJA_ID` detectado AUTOMÁTICAMENTE según la IP real de esta
+ * máquina (ver comentario de `CAJA_ID` abajo). Exportada (no sólo usada
+ * aquí) porque `cajaIdDetect.ts` necesita escribir en esta misma clave.
+ */
+export const STORAGE_KEY_CAJA_ID = 'kiosko:cajaId'
+
+/**
  * Identificador fijo de la caja/kiosko que genera las órdenes, guardado
  * junto con cada orden (`Venta.caja`, ver `types/order.ts`) e impreso en el
  * encabezado del comprobante del cliente ("Caja: K001", ver
  * `encabezadoCliente` en `services/tickets.ts`). También determina el
- * prefijo embebido en el consecutivo (ver `PREFIJO_CAJA`).
+ * prefijo embebido en el consecutivo (ver `PREFIJO_CAJA`), cuál kiosko es el
+ * Master del catálogo (`esKioskoMaster` en `services/catalogOverrides.ts`) y
+ * cuál IP es "la propia" vs. "la del otro kiosko" (ver
+ * `services/kioskoSyncConfig.ts`).
  *
- * TODO: reemplazar por el código real de cada caja/kiosko cuando haya más
- * de un dispositivo físico (ej. variable de entorno o pantalla de
- * configuración por dispositivo).
+ * Se resuelve, en orden de prioridad:
+ *   1. `VITE_CAJA_ID` en `.env` — override manual explícito; si el operador
+ *      lo configura a mano, se respeta sin más preguntas y NUNCA se
+ *      autodetecta (ver `services/cajaIdDetect.ts`).
+ *   2. El último valor autodetectado y cacheado en `localStorage` (ver
+ *      `STORAGE_KEY_CAJA_ID` arriba) — así, en cada recarga posterior, el
+ *      valor correcto está disponible de inmediato (síncrono) sin depender
+ *      de una consulta de red.
+ *   3. `'K001'` por defecto, mientras `cajaIdDetect.ts` hace su primera
+ *      detección en segundo plano (requerimiento: "asignar el nombre del
+ *      kiosko consultando la IP address" — ver ese archivo para el cómo).
+ *
+ * Es decir: NO hace falta configurar nada a mano en la mayoría de los casos
+ * — basta con que las dos máquinas tengan la IP que les corresponde (ver
+ * `.env.example` -> `VITE_IP_KIOSKO_K001`/`VITE_IP_KIOSKO_K002`) y
+ * `cajaIdDetect.ts` detecta e inyecta el `CAJA_ID` correcto solo, en el
+ * primer arranque de cada máquina.
  */
-export const CAJA_ID = 'K001'
+function resolverCajaIdInicial(): string {
+  const override = import.meta.env.VITE_CAJA_ID
+  if (override) return override
+  try {
+    const cacheado = localStorage.getItem(STORAGE_KEY_CAJA_ID)
+    if (cacheado) return cacheado
+  } catch {
+    // localStorage no disponible (modo privado, cuota llena, etc.): se sigue
+    // con el valor por defecto, igual que el resto de este archivo.
+  }
+  return 'K001'
+}
+
+export const CAJA_ID = resolverCajaIdInicial()
 
 /** Cantidad fija de dígitos del consecutivo incremental propio de cada caja (ej. "0000000001"). */
 const DIGITOS_CONSECUTIVO = 10
