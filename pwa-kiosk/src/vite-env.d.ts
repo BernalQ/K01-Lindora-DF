@@ -20,6 +20,10 @@ interface ImportMetaEnv {
   readonly VITE_CODISA_ID_TIENDA?: string
   /** Token compartido para autenticarse contra print-bridge (ver `services/kioskToken.ts` y `KIOSK_TOKEN` en `print-bridge/.env.example`). */
   readonly VITE_KIOSK_TOKEN?: string
+  /** API key de este kiosko (K001) para autenticar (header x-api-key) el envío de copia de ventas a nuestro backend en AWS (ver `services/awsVentas.ts`). */
+  readonly VITE_AWS_VENTAS_API_KEY_K001?: string
+  /** Igual que la anterior, pero para el kiosko K002. */
+  readonly VITE_AWS_VENTAS_API_KEY_K002?: string
 }
 
 interface ImportMeta {

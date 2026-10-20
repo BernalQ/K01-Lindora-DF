@@ -13,6 +13,7 @@ import {
 } from '../../services/tickets'
 import { DATAFONO_CONFIG, enviarTransaccionDatafono } from '../../services/datafono'
 import { CAJA_ID, STORAGE_KEY_CAJA_ID } from '../../services/consecutivo'
+import { obtenerResumenAwsVentas, reenviarVentaAwsManual, type EnvioAwsPendiente } from '../../services/awsVentas'
 import type { Product } from '../../types/catalog'
 import type { VentaEnCola } from '../../types/order'
 import type { ResultadoDatafono } from '../../types/datafono'
@@ -27,7 +28,7 @@ interface AdminScreenProps {
 const PIN_VALIDO = '123456'
 const LARGO_PIN = 6
 
-type VistaAdmin = 'menu' | 'precio' | 'agotado' | 'ordenes' | 'cierre' | 'kiosko'
+type VistaAdmin = 'menu' | 'precio' | 'agotado' | 'ordenes' | 'cierre' | 'kiosko' | 'awsVentas'
 
 /**
  * Pantalla de administración del kiosko, accesible desde el botón "ADMIN"
@@ -39,6 +40,8 @@ type VistaAdmin = 'menu' | 'precio' | 'agotado' | 'ordenes' | 'cierre' | 'kiosko
  * - Cierre de caja.
  * - Elegir cuál de los dos kioskos físicos es esta máquina (`PanelKiosko`
  *   más abajo en este archivo).
+ * - Ver el estado de los envíos de venta a nuestro backend en AWS: cuáles se
+ *   enviaron y cuáles faltan, con reenvío manual (`PanelAwsVentas` más abajo).
  *
  * Precio y agotado se aplican mutando directamente el array `PRODUCTS`
  * compartido (ver `services/catalogOverrides.ts`), así que el resto de la
@@ -75,6 +78,7 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
         {vista === 'ordenes' && <PanelOrdenesDelDia />}
         {vista === 'cierre' && <PanelCierreCaja />}
         {vista === 'kiosko' && <PanelKiosko />}
+        {vista === 'awsVentas' && <PanelAwsVentas />}
       </main>
     </div>
   )
@@ -186,6 +190,7 @@ function MenuAdmin({ onSeleccionar }: { onSeleccionar: (vista: VistaAdmin) => vo
     { vista: 'ordenes', label: t('admin.menuVerOrdenes') },
     { vista: 'cierre', label: t('admin.menuCierreCaja') },
     { vista: 'kiosko', label: t('admin.menuKiosko') },
+    { vista: 'awsVentas', label: t('admin.menuAwsVentas') },
   ]
 
   return (
@@ -982,6 +987,116 @@ function PanelKiosko() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Panel: estado de envíos de venta a AWS (enviados / pendientes).     */
+/* ------------------------------------------------------------------ */
+
+function formatFechaHoraAdmin(iso: string): string {
+  return new Date(iso).toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'medium' })
+}
+
+/**
+ * Muestra el estado de `services/awsVentas.ts`: qué ventas ya se confirmaron
+ * recibidas por nuestro backend en AWS y cuáles siguen pendientes (con su
+ * último error y cuántos intentos automáticos llevan), con un botón de
+ * reenvío manual por cada pendiente (`reenviarVentaAwsManual`). Se refresca
+ * leyendo de nuevo `obtenerResumenAwsVentas()` cada vez que el operador entra
+ * a este panel o presiona "Reenviar" — no hay suscripción reactiva porque el
+ * estado vive en `localStorage`, no en un store.
+ */
+function PanelAwsVentas() {
+  const { t } = useLanguage()
+  const [resumen, setResumen] = useState(() => obtenerResumenAwsVentas())
+  const [reenviando, setReenviando] = useState<string | null>(null)
+
+  const refrescar = () => setResumen(obtenerResumenAwsVentas())
+
+  const reenviar = async (ventaId: string) => {
+    setReenviando(ventaId)
+    try {
+      await reenviarVentaAwsManual(ventaId)
+    } finally {
+      setReenviando(null)
+      refrescar()
+    }
+  }
+
+  return (
+    <div className="mx-auto flex max-w-2xl flex-col gap-8">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-wood-900">{t('admin.awsVentasTitle')}</h2>
+        <button
+          type="button"
+          onClick={refrescar}
+          className="rounded-full bg-wood-100 px-4 py-2 text-sm font-semibold text-wood-700 transition-transform active:scale-95"
+        >
+          {t('admin.awsVentasRefrescar')}
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <h3 className="text-sm font-bold tracking-wide text-wood-500 uppercase">
+          {t('admin.awsVentasPendientesTitle', { cantidad: String(resumen.pendientes.length) })}
+        </h3>
+        {resumen.pendientes.length === 0 ? (
+          <p className="text-sm text-wood-500">{t('admin.awsVentasPendientesVacio')}</p>
+        ) : (
+          <div className="flex flex-col divide-y divide-wood-100 rounded-xl bg-white shadow-sm shadow-wood-900/5">
+            {resumen.pendientes.map((item: EnvioAwsPendiente) => (
+              <div key={item.ventaId} className="flex flex-col gap-2 px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-mono font-bold text-wood-900">#{item.ventaId}</span>
+                  <span
+                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+                      item.agotado ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
+                    }`}
+                  >
+                    {item.agotado
+                      ? t('admin.awsVentasAgotado')
+                      : t('admin.awsVentasIntentos', { intentos: String(item.intentos) })}
+                  </span>
+                </div>
+                <p className="text-xs text-wood-500">{item.ultimoError}</p>
+                {!item.agotado && (
+                  <p className="text-xs text-wood-400">
+                    {t('admin.awsVentasProximoIntento', { fecha: formatFechaHoraAdmin(item.proximoIntentoEn) })}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => reenviar(item.ventaId)}
+                  disabled={reenviando === item.ventaId}
+                  className="self-start rounded-xl bg-brand-red px-4 py-2 text-sm font-bold text-white transition-transform active:scale-95 disabled:opacity-60"
+                >
+                  {reenviando === item.ventaId ? t('admin.awsVentasReenviando') : t('admin.awsVentasReenviar')}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <h3 className="text-sm font-bold tracking-wide text-wood-500 uppercase">
+          {t('admin.awsVentasEnviadosTitle', { cantidad: String(resumen.enviados.length) })}
+        </h3>
+        {resumen.enviados.length === 0 ? (
+          <p className="text-sm text-wood-500">{t('admin.awsVentasEnviadosVacio')}</p>
+        ) : (
+          <div className="flex flex-col divide-y divide-wood-100 rounded-xl bg-white shadow-sm shadow-wood-900/5">
+            {resumen.enviados.map((item) => (
+              <div key={item.ventaId} className="flex items-center justify-between gap-3 px-4 py-3">
+                <span className="font-mono font-semibold text-wood-900">#{item.ventaId}</span>
+                <span className="text-xs text-wood-500">{formatFechaHoraAdmin(item.enviadoEn)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

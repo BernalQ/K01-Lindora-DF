@@ -1,5 +1,6 @@
 import { codigoArticuloParaCodisa } from '../data/catalog'
 import { registrarLogCodisa } from './codisaLogs'
+import { enviarVentaAws } from './awsVentas'
 import type { Cliente } from '../types/factura'
 import type { Venta } from '../types/order'
 import type {
@@ -404,6 +405,14 @@ export function validarPedidoWsDf(payload: WsDfPayload): ValidacionWsDf {
  *    manda nada por red).
  * 3. Request/response se registran en la bitácora (`registrarLogCodisa`,
  *    ver `services/codisaLogs.ts`) para depuración.
+ *
+ * En el mismo instante en que se intenta el envío real a Codisa (justo
+ * después de pasar la validación local), se dispara también
+ * `enviarVentaAws` (ver `services/awsVentas.ts`) con el MISMO payload, para
+ * mandar una copia de la venta a nuestro backend propio en AWS. Es
+ * deliberadamente independiente: no se espera su resultado (`void`, no
+ * `await`) y un fallo ahí no afecta ni retrasa el envío a Codisa ni el resto
+ * del flujo del kiosko — `enviarVentaAws` maneja sus propios reintentos.
  */
 export async function enviarPedidoWsDf(payload: WsDfPayload): Promise<ResultadoOrdenCodisa> {
   if (envioOrdenEnCurso) {
@@ -427,6 +436,7 @@ export async function enviarPedidoWsDf(payload: WsDfPayload): Promise<ResultadoO
   envioOrdenEnCurso = true
   try {
     registrarLogCodisa('orden', 'request', payload)
+    void enviarVentaAws(payload)
 
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)

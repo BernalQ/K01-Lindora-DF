@@ -15,6 +15,9 @@ import { useLanguage } from './context/useLanguage'
 // de ese módulo (polling de mensajes pendientes + resincronización automática
 // al recuperar contacto con el otro kiosko, ver doc ahí).
 import { solicitarResincronizacion } from './services/kioskoSyncPolling'
+// Arranca el revisor de reintentos automáticos hacia AWS (envíos fallidos
+// de `services/awsVentas.ts` que esperan su próximo intento cada 30 min).
+import { iniciarRevisionAwsVentas } from './services/awsVentas'
 
 type Screen = 'welcome' | 'mesaSetup' | 'menu' | 'payment' | 'cedula' | 'registroCliente' | 'admin'
 
@@ -28,6 +31,7 @@ function App() {
   // sin depender de en qué pantalla quede el usuario después.
   useEffect(() => {
     solicitarResincronizacion()
+    iniciarRevisionAwsVentas()
   }, [])
   const [cedulaPendiente, setCedulaPendiente] = useState('')
   const clearCart = useCartStore((s) => s.clear)
