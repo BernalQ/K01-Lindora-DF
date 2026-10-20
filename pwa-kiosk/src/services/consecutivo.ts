@@ -111,8 +111,15 @@ function derivarPrefijoCaja(cajaId: string): string {
   return String(numero).padStart(DIGITOS_PREFIJO, '0')
 }
 
-/** Prefijo de 2 dígitos de ESTA caja, embebido al inicio de cada consecutivo generado (ver `generarConsecutivo`). */
-const PREFIJO_CAJA = derivarPrefijoCaja(CAJA_ID)
+/**
+ * Prefijo de 2 dígitos de ESTA caja, embebido al inicio de cada consecutivo
+ * generado (ver `generarConsecutivo`). Exportado porque también se usa para
+ * mostrar el identificador del kiosko en la pantalla de bienvenida (ej.
+ * "Kiosko 01", ver `WelcomeScreen.tsx`) — mismo número de 2 dígitos que ya
+ * identifica a esta caja en todos los demás lugares (consecutivo, ticket del
+ * cliente), así que no se introduce una segunda forma de numerar kioskos.
+ */
+export const PREFIJO_CAJA = derivarPrefijoCaja(CAJA_ID)
 
 /** Clave de `localStorage` del contador propio de ESTA caja (una por kiosko, ver comentario de archivo). */
 const STORAGE_KEY = `kiosko:consecutivo:${CAJA_ID}`

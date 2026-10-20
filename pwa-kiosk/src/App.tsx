@@ -6,7 +6,6 @@ import PaymentScreen from './components/screens/PaymentScreen'
 import CedulaScreen from './components/screens/CedulaScreen'
 import RegistroClienteScreen from './components/screens/RegistroClienteScreen'
 import AdminScreen from './components/screens/AdminScreen'
-import IndicadorSyncRemoto from './components/ui/IndicadorSyncRemoto'
 import { useCartStore } from './store/cartStore'
 import { useMesaStore } from './store/mesaStore'
 import type { Cliente } from './types/factura'
@@ -135,13 +134,7 @@ function App() {
     contenido = <WelcomeScreen onStart={() => setScreen('mesaSetup')} onOpenAdmin={() => setScreen('admin')} />
   }
 
-  return (
-    <>
-      {contenido}
-      {/* Requerimiento "Modo autónomo": visible en cualquier pantalla, no sólo en una específica. */}
-      <IndicadorSyncRemoto />
-    </>
-  )
+  return contenido
 }
 
 export default App

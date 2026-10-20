@@ -6,7 +6,6 @@ import { printRouter } from './routes/print.js'
 import { clientesRouter } from './routes/clientes.js'
 import { facturaRouter } from './routes/factura.js'
 import { ventasRouter } from './routes/ventas.js'
-import { systemRouter } from './routes/system.js'
 import { FACTURAS_DIR, asegurarCarpetaDatos } from './data/paths.js'
 import { iniciarServidorKioskoSync } from './kioskoSync/server.js'
 
@@ -31,10 +30,9 @@ app.use('/facturas', express.static(FACTURAS_DIR))
 
 /**
  * Exige el header `x-kiosk-token` en el resto de rutas (clientes/factura/
- * ventas/print/system) si este servicio tiene `KIOSK_TOKEN` configurado en
- * su `.env` — protege contra que cualquier dispositivo en la red
- * 10.0.5.0/24 pueda llamarlas sin credencial, incluyendo `/system/exit-kiosk`
- * (ver hallazgo de auditoría).
+ * ventas/print) si este servicio tiene `KIOSK_TOKEN` configurado en su
+ * `.env` — protege contra que cualquier dispositivo en la red 10.0.5.0/24
+ * pueda llamarlas sin credencial (ver hallazgo de auditoría).
  *
  * Igual que `CODISA_API_KEY`/`SMTP_*` en este mismo servicio: si
  * `KIOSK_TOKEN` no está configurado, el guard queda deshabilitado (fail-open)
@@ -63,7 +61,6 @@ app.use(printRouter)
 app.use(clientesRouter)
 app.use(facturaRouter)
 app.use(ventasRouter)
-app.use(systemRouter)
 
 app.listen(PORT, () => {
   console.log(`[print-bridge] escuchando en http://localhost:${PORT}`)

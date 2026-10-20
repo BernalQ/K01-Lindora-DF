@@ -1,7 +1,6 @@
-import { useState } from 'react'
 import logoBlanco from '../../assets/logo/optimized/logo-blanco.png'
 import { useLanguage } from '../../context/useLanguage'
-import SalirKioskoModal from '../ui/SalirKioskoModal'
+import { PREFIJO_CAJA } from '../../services/consecutivo'
 
 interface WelcomeScreenProps {
   onStart: () => void
@@ -11,12 +10,25 @@ interface WelcomeScreenProps {
 
 export default function WelcomeScreen({ onStart, onOpenAdmin }: WelcomeScreenProps) {
   const { language, setLanguage, t } = useLanguage()
-  const [mostrarSalirKiosko, setMostrarSalirKiosko] = useState(false)
 
   return (
     <div className="relative flex h-full min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-gradient-to-b from-wood-950 via-wood-900 to-wood-950 text-cream-50">
       {/* Resplandor decorativo detrás del logo */}
       <div className="pointer-events-none absolute top-1/3 h-[36rem] w-[36rem] -translate-y-1/2 rounded-full bg-brand-red/20 blur-[120px]" />
+
+      {/* Identificador del kiosko: centrado arriba, visible de inmediato al
+          cargar (no depende de ningún estado/efecto — `PREFIJO_CAJA` ya está
+          resuelto de forma síncrona al cargar el módulo, ver
+          `services/consecutivo.ts`). Mismo número de 2 dígitos que identifica
+          a esta caja en el consecutivo de orden y en el ticket del cliente,
+          para no introducir una segunda numeración. Mismo estilo visual que
+          el botón ADMIN (misma altura/tipografía) para que ambos elementos
+          de la franja superior se vean como parte de un mismo conjunto. */}
+      <div className="absolute top-5 left-1/2 z-20 -translate-x-1/2 sm:top-7">
+        <span className="block rounded-full border-2 border-cream-50/20 bg-transparent px-4 py-2 text-xs font-semibold tracking-wide text-cream-50/50 uppercase sm:px-5 sm:py-2.5 sm:text-sm">
+          {t('welcome.kioskoId', { numero: PREFIJO_CAJA })}
+        </span>
+      </div>
 
       {/* Botón ADMIN: esquina superior izquierda (la derecha ya la ocupa el
           selector de idioma), pequeño para no competir visualmente con el
@@ -32,21 +44,6 @@ export default function WelcomeScreen({ onStart, onOpenAdmin }: WelcomeScreenPro
           {t('welcome.admin')}
         </button>
       </div>
-
-      {/* Botón "Salir de kiosko": esquina inferior derecha, lejos del CTA
-          principal y de los demás controles (ADMIN arriba-izquierda,
-          idioma arriba-derecha) para evitar toques accidentales. Sólo abre
-          el pop-up de PIN (`SalirKioskoModal`); el acceso real queda
-          protegido dentro de ese componente. */}
-      <button
-        type="button"
-        onClick={() => setMostrarSalirKiosko(true)}
-        className="absolute right-5 bottom-5 z-20 rounded-full border-2 border-cream-50/20 bg-transparent px-4 py-2 text-xs font-semibold tracking-wide text-cream-50/50 uppercase transition-colors active:bg-white/10 sm:right-7 sm:bottom-7 sm:px-5 sm:py-2.5 sm:text-sm"
-      >
-        {t('welcome.salirKiosko')}
-      </button>
-
-      {mostrarSalirKiosko && <SalirKioskoModal onClose={() => setMostrarSalirKiosko(false)} />}
 
       {/* Selector de idioma: esquina superior derecha */}
       <div className="absolute top-5 right-5 z-20 flex items-center gap-3 sm:top-7 sm:right-7 sm:gap-4">

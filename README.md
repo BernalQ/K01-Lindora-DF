@@ -30,7 +30,6 @@ npm run dev             # http://localhost:4000
 - [x] Cola offline en IndexedDB (`pwa-kiosk/src/services/offlineQueue.ts`)
 - [x] Stub `enviarVentaACodisa()` (`pwa-kiosk/src/services/codisa.ts`) — sin conectar, ver "Fuera de alcance"
 - [x] Print bridge: servidor Express + `POST /print` + conexión ESC/POS por IP (`print-bridge/`)
-- [x] "Salir de kiosko" con PIN: `POST /system/exit-kiosk` en `print-bridge/` cierra el navegador (`taskkill`) y revela el escritorio de Windows
 - [ ] Catálogo por categoría (pantalla)
 - [ ] Personalización de pedido (corte, término, acompañamientos)
 - [ ] Carrito / resumen

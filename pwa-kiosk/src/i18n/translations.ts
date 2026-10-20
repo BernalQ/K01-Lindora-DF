@@ -13,15 +13,7 @@ const dictionaries = {
     'welcome.english': 'English',
     'welcome.spanish': 'Español',
     'welcome.admin': 'Admin',
-    'welcome.salirKiosko': 'Salir de kiosko',
-
-    'salirKiosko.titulo': 'Salir de kiosko',
-    'salirKiosko.subtitulo': 'Ingresa la clave numérica de 6 dígitos',
-    'salirKiosko.pinError': 'Clave incorrecta. Intenta de nuevo.',
-    'salirKiosko.saliendo': 'Cerrando kiosko…',
-    'salirKiosko.fallo': 'No se pudo cerrar el kiosko. Verifica el servicio local e intenta de nuevo.',
-    'salirKiosko.reintentar': 'Reintentar',
-    'salirKiosko.cancelar': 'Cancelar',
+    'welcome.kioskoId': 'Kiosko {{numero}}',
 
     'common.backToMenu': 'Volver al menú',
     'common.backToOrder': 'Volver al pedido',
@@ -274,9 +266,6 @@ const dictionaries = {
     'codisaOrden.tituloErrorRed': 'No se pudo contactar a Codisa ✖',
     'codisaOrden.tituloEnCurso': 'Envío a Codisa en curso',
     'codisaOrden.tituloTiempoAgotado': 'Tiempo de espera agotado al enviar a Codisa',
-
-    /** Indicador flotante (ver `components/ui/IndicadorSyncRemoto.tsx`): requerimiento "Modo autónomo" — se muestra cuando este kiosko no logra contactar al otro kiosko. */
-    'sync.operandoSinSincronizacion': 'Operando sin sincronización',
   },
   en: {
     'welcome.tapToStart': 'Tap to start',
@@ -284,15 +273,7 @@ const dictionaries = {
     'welcome.english': 'English',
     'welcome.spanish': 'Español',
     'welcome.admin': 'Admin',
-    'welcome.salirKiosko': 'Exit kiosk',
-
-    'salirKiosko.titulo': 'Exit kiosk',
-    'salirKiosko.subtitulo': 'Enter the 6-digit numeric code',
-    'salirKiosko.pinError': 'Incorrect code. Try again.',
-    'salirKiosko.saliendo': 'Closing kiosk…',
-    'salirKiosko.fallo': 'Could not close the kiosk. Check the local service and try again.',
-    'salirKiosko.reintentar': 'Retry',
-    'salirKiosko.cancelar': 'Cancel',
+    'welcome.kioskoId': 'Kiosk {{numero}}',
 
     'common.backToMenu': 'Back to menu',
     'common.backToOrder': 'Back to order',
@@ -544,8 +525,6 @@ const dictionaries = {
     'codisaOrden.tituloErrorRed': 'Could not reach Codisa ✖',
     'codisaOrden.tituloEnCurso': 'Codisa submission in progress',
     'codisaOrden.tituloTiempoAgotado': 'Request to Codisa timed out',
-
-    'sync.operandoSinSincronizacion': 'Operating without synchronization',
   },
 } as const
 

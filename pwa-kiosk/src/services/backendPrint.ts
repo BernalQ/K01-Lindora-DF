@@ -16,11 +16,10 @@ import { registrarLogImpresion } from './printLogs'
  * recibe el ticket ya armado, listo para escribirse tal cual al socket TCP
  * de la impresora, sin tener que interpretar nada.
  *
- * Nota: `facturacion.ts` (clientes/Excel/Hacienda) y `systemBridge.ts`
- * (salir de modo kiosko) siguen hablando con el `print-bridge` original en
- * el puerto 4000 — ese servicio no es sólo para impresoras térmicas, así
- * que este reemplazo es específico del envío de tiquetes, no de todo
- * `print-bridge`.
+ * Nota: `facturacion.ts` (clientes/Excel/Hacienda) sigue hablando con el
+ * `print-bridge` original en el puerto 4000 — ese servicio no es sólo para
+ * impresoras térmicas, así que este reemplazo es específico del envío de
+ * tiquetes, no de todo `print-bridge`.
  */
 
 const BACKEND_PRINT_URL = 'http://localhost:3001/print'

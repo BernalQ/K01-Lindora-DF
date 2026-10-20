@@ -132,17 +132,43 @@ export default function MesaSetupScreen({ onContinuar, onCancelar }: MesaSetupSc
               - `items-center justify-center` en este `<div>` centra la
                 imagen vertical y horizontalmente dentro de ese alto ya
                 igualado al de la columna derecha.
-              - `max-h-[36vh]` (antes un valor fijo en `px`, ej. 500px): al
-                ser relativo al alto del viewport en vez de un píxel fijo,
-                la imagen escala junto con el resto de la pantalla en
-                lugar de arriesgarse a exceder el alto disponible en una
-                pantalla de kiosko más baja (M8W) — ver comentario sobre
-                `h-screen overflow-hidden` en el componente. El espacio
-                restante dentro del bloque queda vacío y la imagen se
-                mantiene centrada (vertical y horizontalmente) por
-                `items-center justify-center` (no afecta la posición real
-                de los botones, que sigue fija por el `justify-between`
-                del envoltorio, es sólo un ajuste visual de proporción).
+              - `max-h-[36vh] md:max-h-[60vh]` (antes `max-h-[36vh]` fijo en
+                todas las resoluciones; originalmente un valor en `px`, ej.
+                500px): relativo al alto del viewport en vez de un píxel
+                fijo, para que la imagen escale junto con el resto de la
+                pantalla en lugar de arriesgarse a exceder el alto
+                disponible en una pantalla de kiosko más baja (M8W) — ver
+                comentario sobre `h-screen overflow-hidden` en el
+                componente. El tope SÍ es el factor que termina dictando el
+                alto de esta fila del grid en la práctica (verificado con
+                DevTools en 1024x600/1366x768/1920x1080): el contenido real
+                de la columna derecha mide ~270-280px sin importar el alto
+                del viewport, así que en pantallas de kiosko normales el
+                `max-h` de este bloque (no la derecha) es quien gana esa
+                comparación — por eso subirlo agranda la imagen de verdad, y
+                no sólo "porque sobre espacio": se midió cuánto margen libre
+                queda entre el grid y la fila de botones de abajo antes de
+                que `justify-between` empiece a comprimirla (el efecto
+                secundario del intento anterior que se evitó esta vez) en
+                las tres resoluciones de prueba, y se subió el tope hasta
+                `60vh` dejando siempre un colchón de sobra: ~68px libres en
+                1024x600 (la más ajustada de las tres), ~115px en 1366x768 y
+                ~202px en 1920x1080 — más allá de `60vh` ese colchón en
+                1024x600 se empieza a achicar demasiado rápido, así que se
+                dejó ahí como techo seguro. `md:` (≥768px de ancho) separa
+                esto del fallback de una sola columna (`grid-cols-1` por
+                debajo de `md`, pantalla angosta/vertical no usada por el
+                kiosko pero igual soportada): ahí la imagen y la columna
+                derecha se apilan, así que agrandar el tope hacía que el
+                selector de identificador se solapara con los botones
+                "Cancelar"/"Continuar" — se deja ese caso en 36vh (el valor
+                original, ya verificado sin overlap) y sólo se agranda en el
+                layout de 2 columnas. El espacio restante
+                dentro del bloque queda vacío y la imagen se mantiene
+                centrada (vertical y horizontalmente) por `items-center
+                justify-center` (no afecta la posición real de los botones,
+                que sigue fija por el `justify-between` del envoltorio, es
+                sólo un ajuste visual de proporción).
               - `object-contain` en el `<img>` (con `h-full w-full`) escala
                 la imagen para ocupar el alto disponible sin distorsión:
                 conserva su proporción real y dentro del propio elemento
@@ -151,7 +177,7 @@ export default function MesaSetupScreen({ onContinuar, onCancelar }: MesaSetupSc
                 imagen para no quede pegada a los límites del bloque, sin
                 restarle más espacio vertical del necesario al resto de la
                 pantalla. */}
-          <div className="flex h-full max-h-[36vh] w-full items-center justify-center p-3">
+          <div className="flex h-full max-h-[36vh] w-full items-center justify-center p-3 md:max-h-[60vh]">
             <img
               src={piernaCerdoFlyer}
               alt={t('mesaSetup.espacioPublicidad')}
