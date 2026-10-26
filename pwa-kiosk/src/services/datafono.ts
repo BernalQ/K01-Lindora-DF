@@ -194,7 +194,7 @@ export function formatMontoDatafono(monto: number): string {
 
 /**
  * Convierte el consecutivo legible del kiosko (`generarConsecutivo()`, ej.
- * "010000000007", 12 dígitos sin guiones: 2 de prefijo de caja + 10 de
+ * "0100000007", 10 dígitos sin guiones: 2 de prefijo de caja + 8 de
  * consecutivo incremental propio de esa caja — ver `services/consecutivo.ts`)
  * en un `invoice` compatible con Transaction Manager.
  *
@@ -204,10 +204,11 @@ export function formatMontoDatafono(monto: number): string {
  * inválidos en el request" (categoría `rechazo-generico`) — BAC exige un
  * string puramente numérico de máximo 12 caracteres (ver ejemplo
  * documentado "112234"). El esquema actual ya es puramente numérico y mide
- * exactamente 12 dígitos, así que no necesita transformación: cae directo en
+ * exactamente 10 dígitos, así que no necesita transformación: cae directo en
  * la rama de respaldo (quita caracteres no numéricos — ninguno en este
- * caso — y toma los últimos 12), que deja pasar el consecutivo completo, sin
- * truncarse. Como `obtenerNumeroFactura()` en `PaymentScreen` cachea el
+ * caso — y toma los últimos 12), que deja pasar el consecutivo completo
+ * (10 dígitos, por debajo del tope de 12 de BAC), sin truncarse. Como
+ * `obtenerNumeroFactura()` en `PaymentScreen` cachea el
  * consecutivo en un ref y lo reutiliza en cada reintento de la MISMA orden,
  * un reintento manda el mismo `invoice` (correcto: sigue siendo la misma
  * transacción) y una orden nueva siempre produce uno distinto.

@@ -3,12 +3,13 @@
  * `types/order.ts`).
  *
  * Formato: prefijo fijo de 2 dígitos que identifica la caja (ver
- * `PREFIJO_CAJA`, derivado de `CAJA_ID`) + consecutivo incremental de 10
- * dígitos propio de esa caja, para un total de 12 caracteres puramente
- * numéricos (ej. "010000000001" para la primera orden de K001). El
- * consecutivo arranca en "0000000000" y sube de 1 en 1 en cada orden
- * confirmada, SIN reiniciarse nunca — ni por mes, ni por punto de venta, ni
- * al reiniciar el kiosko (mismo criterio que el esquema anterior).
+ * `PREFIJO_CAJA`, derivado de `CAJA_ID`: "01" para K001, "02" para K002) +
+ * consecutivo incremental de 8 dígitos propio de esa caja, para un total de
+ * 10 caracteres puramente numéricos (ej. "0100000001" para la primera orden
+ * de K001, "0200000001" para la primera de K002). El consecutivo arranca en
+ * "00000000" y sube de 1 en 1 en cada orden confirmada, SIN reiniciarse
+ * nunca — ni por mes, ni por punto de venta, ni al reiniciar el kiosko
+ * (mismo criterio que el esquema anterior).
  *
  * Requerimiento vigente: "eliminar consecutivo global compartido;
  * implementar consecutivos independientes por kiosko". El esquema anterior
@@ -26,14 +27,14 @@
  *   b. Un prefijo de 2 dígitos propio (`PREFIJO_CAJA`) embebido en el
  *      consecutivo impreso/guardado, así que aunque dos cajas lleguen
  *      casualmente al mismo número de orden interno, el `Venta.id` completo
- *      sigue siendo distinto (ej. K001 en su orden #1 = "010000000001",
- *      K002 en su orden #1 = "020000000001").
+ *      sigue siendo distinto (ej. K001 en su orden #1 = "0100000001",
+ *      K002 en su orden #1 = "0200000001").
  *
  * `formatInvoiceDatafono` (ver `services/datafono.ts`) sigue funcionando sin
  * cambios con este formato: al no tener guiones, cae directo en su rama de
  * respaldo (quita caracteres no numéricos — ninguno en este caso — y toma
- * los últimos 12), y el nuevo consecutivo mide exactamente 12 dígitos, así
- * que pasa completo, sin truncarse.
+ * los últimos 12), y el consecutivo de 10 dígitos pasa completo, sin
+ * truncarse (BAC acepta hasta 12 caracteres).
  */
 
 /**
@@ -91,8 +92,8 @@ function resolverCajaIdInicial(): string {
 
 export const CAJA_ID = resolverCajaIdInicial()
 
-/** Cantidad fija de dígitos del consecutivo incremental propio de cada caja (ej. "0000000001"). */
-const DIGITOS_CONSECUTIVO = 10
+/** Cantidad fija de dígitos del consecutivo incremental propio de cada caja (ej. "00000001"). */
+const DIGITOS_CONSECUTIVO = 8
 
 /** Cantidad fija de dígitos del prefijo de caja (ej. "01"). */
 const DIGITOS_PREFIJO = 2
@@ -171,9 +172,9 @@ function guardarUltimoConsecutivo(valor: number): void {
 
 /**
  * Genera y persiste el siguiente consecutivo de ESTA caja/kiosko: el
- * contador propio de la caja arranca en "0000000000" y sube de 1 en 1 en
+ * contador propio de la caja arranca en "00000000" y sube de 1 en 1 en
  * cada llamada, sin reiniciarse nunca, y se devuelve ya con el prefijo de
- * caja embebido (ej. "010000000001" para la primera orden de K001). Debe
+ * caja embebido (ej. "0100000001" para la primera orden de K001). Debe
  * llamarse exactamente una vez por orden confirmada (ver `PaymentScreen.tsx`,
  * construcción de `nuevaVenta`), ya que cada llamada consume el número.
  */

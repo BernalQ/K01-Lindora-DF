@@ -173,7 +173,7 @@ function enviarMensajeMesaSync(mensaje: MensajeMesaSync): void {
  * `bloquearMesa(nuevaVenta.mesa, nuevaVenta.id)`): es el único punto donde
  * `tableId` (el identificador de mesa) y `orderId` (el consecutivo de la
  * orden) se conocen juntos, igual que en el ejemplo del requerimiento ("Si
- * K001 ocupa una mesa... Mesa: 15, Orden: 010000000123"). El bloqueo inicial
+ * K001 ocupa una mesa... Mesa: 15, Orden: 0100000123"). El bloqueo inicial
  * que hace `mesaStore.iniciar()` al elegir el identificador en
  * `MesaSetupScreen` (ANTES de que exista cualquier orden) llama a esta misma
  * función SIN `orderId` — ese bloqueo temprano sigue siendo sólo local

@@ -754,7 +754,7 @@ export function formatFechaHoraAmPm(fecha: Date, incluirSegundos = false): strin
  * criterio que `lineaConMonto`/`lineaItemColumnas`); ese right-align se quitó
  * para este tiquete en particular — la suma total al pie (ver
  * `ticketCierreCaja`) no cambia. Si la línea completa excede el ancho del
- * papel (el consecutivo de 12 dígitos, ver `services/consecutivo.ts`, casi
+ * papel (el consecutivo de 10 dígitos, ver `services/consecutivo.ts`, casi
  * siempre la deja muy cerca o por encima del límite de 32 columnas), la
  * impresora térmica la continúa automáticamente en el siguiente renglón
  * físico, sin perder la alineación izquierda.
@@ -784,7 +784,7 @@ function lineaOrdenCierre(numeroOrden: string, hora: string, total: string): str
  * cuándo se hizo el corte. La hora de cada línea de orden, en cambio, SÍ es
  * la de esa venta puntual (`venta.fechaHora`, en formato 24 horas, sin
  * am/pm, para que la línea sea lo más corta posible junto al consecutivo de
- * 12 dígitos), para poder ubicarla en el tiempo dentro del listado del día.
+ * 10 dígitos), para poder ubicarla en el tiempo dentro del listado del día.
  *
  * El "Kiosko <ID>" toma `caja` de la primera orden del día (todas las
  * órdenes de un mismo cierre vienen del mismo dispositivo físico); si por

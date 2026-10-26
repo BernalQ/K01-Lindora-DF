@@ -28,10 +28,10 @@ export interface Venta {
   /**
    * Identificador interno de la orden dentro del PWA: el consecutivo propio
    * de la caja/kiosko que confirmó la orden, generado con
-   * `services/consecutivo.ts` -> `generarConsecutivo()`. Número de 12
-   * dígitos puramente numérico: 2 dígitos de prefijo de caja + 10 dígitos de
-   * consecutivo incremental (ej. "010000000005" para la quinta orden de
-   * K001), que arranca en "0000000000" y nunca se reinicia. NO es un
+   * `services/consecutivo.ts` -> `generarConsecutivo()`. Número de 10
+   * dígitos puramente numérico: 2 dígitos de prefijo de caja + 8 dígitos de
+   * consecutivo incremental (ej. "0100000005" para la quinta orden de
+   * K001), que arranca en "00000000" y nunca se reinicia. NO es un
    * consecutivo global compartido entre cajas — cada caja lleva su propio
    * contador y su propio prefijo, así que dos cajas nunca producen el mismo
    * `id` (ver comentario de archivo en `consecutivo.ts`). Se usa como clave

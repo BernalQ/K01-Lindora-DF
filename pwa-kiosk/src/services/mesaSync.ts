@@ -15,7 +15,7 @@ export interface MensajeLockTable {
   action: 'lockTable'
   /** Identificador de mesa (en este kiosko, la raza de ganado elegida en `MesaSetupScreen`, ver `services/mesaLocks.ts`). */
   tableId: string
-  /** Consecutivo de la orden que ocupa la mesa (ver `services/consecutivo.ts`, ej. "010000000123"). */
+  /** Consecutivo de la orden que ocupa la mesa (ver `services/consecutivo.ts`, ej. "0100000123"). */
   orderId: string
   /** `CAJA_ID` de la caja/kiosko que originó el bloqueo (ej. "K001"). */
   source: string
