@@ -4,6 +4,7 @@ import { enviarVentaAws } from './awsVentas'
 import type { Cliente } from '../types/factura'
 import type { Venta } from '../types/order'
 import type {
+  CategoriaResultadoOrdenCodisa,
   RespuestaClienteCodisa,
   ResultadoBusquedaClienteCodisa,
   ResultadoOrdenCodisa,
@@ -393,6 +394,144 @@ export function validarPedidoWsDf(payload: WsDfPayload): ValidacionWsDf {
 }
 
 /**
+ * Trazabilidad persistida de los envíos de pedido a Codisa, para el panel de
+ * Admin ("Envíos a Codisa", `PanelCodisaOrdenes` en `AdminScreen.tsx`) —
+ * mismo propósito y mismo patrón de persistencia en `localStorage` que
+ * `services/awsVentas.ts`, pero SIN reintento automático en segundo plano
+ * (Codisa, a diferencia de AWS, es parte del flujo de facturación en el
+ * momento de la venta; el único mecanismo de reintento pedido es el botón
+ * manual "Reenviar" del panel). A diferencia de `codisaLogs.ts` (bitácora
+ * cruda de request/response pensada para depurar), esto es un resumen
+ * ESTRUCTURADO pensado para operar: qué pedido quedó sin enviarse, con qué
+ * código de error, y con el JSON exacto que se intentó mandar, listo para
+ * reintentarlo con un botón sin tener que reconstruir nada.
+ */
+
+/** Un pedido que no se pudo enviar a Codisa (o fue rechazado) y espera reenvío manual desde Admin. */
+export interface EnvioCodisaPendiente {
+  ventaId: string
+  /** JSON exacto que se intentó enviar (y que se reenvía tal cual al presionar "Reenviar"). */
+  payload: WsDfPayload
+  /** Categoría del último error (ver `CategoriaResultadoOrdenCodisa`), usada como "código de error" en el panel de Admin. */
+  categoriaError: CategoriaResultadoOrdenCodisa
+  /** Mensaje descriptivo del último error (ver `ResultadoOrdenCodisa.mensaje`). */
+  ultimoError: string
+  /** Intentos ya realizados (el inicial + cada reenvío manual desde Admin). */
+  intentos: number
+  /** ISO de la última vez que se intentó enviar este pedido. */
+  ultimoIntentoEn: string
+}
+
+/** Un pedido que Codisa ya confirmó recibido/aceptado. */
+export interface EnvioCodisaExitoso {
+  ventaId: string
+  enviadoEn: string
+}
+
+const CLAVE_CODISA_PENDIENTES = 'codisa_ordenes_pendientes_v1'
+const CLAVE_CODISA_ENVIADOS = 'codisa_ordenes_enviados_v1'
+
+type CodisaPendientesGuardados = Record<string, EnvioCodisaPendiente>
+type CodisaEnviadosGuardados = Record<string, EnvioCodisaExitoso>
+
+function leerJsonWsDf<T>(clave: string, porDefecto: T): T {
+  try {
+    const crudo = localStorage.getItem(clave)
+    return crudo ? (JSON.parse(crudo) as T) : porDefecto
+  } catch {
+    return porDefecto
+  }
+}
+
+function guardarJsonWsDf(clave: string, valor: unknown): void {
+  try {
+    localStorage.setItem(clave, JSON.stringify(valor))
+  } catch (err) {
+    // Ver comentario equivalente en `services/awsVentas.ts`: un problema de
+    // persistencia de la trazabilidad nunca debe tumbar el flujo de pago.
+    console.warn('[wsdf] No se pudo persistir la trazabilidad de envíos a Codisa en localStorage:', err)
+  }
+}
+
+function leerCodisaPendientes(): CodisaPendientesGuardados {
+  return leerJsonWsDf(CLAVE_CODISA_PENDIENTES, {})
+}
+
+function leerCodisaEnviados(): CodisaEnviadosGuardados {
+  return leerJsonWsDf(CLAVE_CODISA_ENVIADOS, {})
+}
+
+/**
+ * Registra el desenlace de un intento de envío a Codisa (éxito o error) en
+ * la trazabilidad persistida. Se llama desde `enviarPedidoWsDf` en cada uno
+ * de sus puntos de retorno, salvo 'en-curso' (no es un desenlace real de
+ * ESTE intento, ver `envioOrdenEnCurso` más abajo: el envío original sigue
+ * en vuelo y es ÉSE el que terminará registrando el resultado real).
+ *
+ * Éxito ('enviado'): se guarda en `CLAVE_CODISA_ENVIADOS` y se quita de
+ * `CLAVE_CODISA_PENDIENTES` si estaba ahí (ej. tras un reenvío manual
+ * exitoso). Cualquier otra categoría: se guarda/actualiza en
+ * `CLAVE_CODISA_PENDIENTES`, incrementando `intentos` sobre la entrada
+ * previa si ya existía (reenvíos manuales repetidos del mismo pedido).
+ */
+function registrarResultadoCodisaOrdenes(payload: WsDfPayload, resultado: ResultadoOrdenCodisa): void {
+  if (resultado.categoria === 'en-curso') return
+  const ventaId = payload.pedido.id
+
+  if (resultado.categoria === 'enviado') {
+    const enviados = leerCodisaEnviados()
+    enviados[ventaId] = { ventaId, enviadoEn: new Date().toISOString() }
+    guardarJsonWsDf(CLAVE_CODISA_ENVIADOS, enviados)
+
+    const pendientes = leerCodisaPendientes()
+    if (ventaId in pendientes) {
+      delete pendientes[ventaId]
+      guardarJsonWsDf(CLAVE_CODISA_PENDIENTES, pendientes)
+    }
+    return
+  }
+
+  const pendientes = leerCodisaPendientes()
+  const previo = pendientes[ventaId]
+  pendientes[ventaId] = {
+    ventaId,
+    payload,
+    categoriaError: resultado.categoria,
+    ultimoError: resultado.mensaje,
+    intentos: (previo?.intentos ?? 0) + 1,
+    ultimoIntentoEn: new Date().toISOString(),
+  }
+  guardarJsonWsDf(CLAVE_CODISA_PENDIENTES, pendientes)
+}
+
+/** Resumen para el panel de Admin ("Envíos a Codisa"): pedidos que no se pudieron enviar (con su error y JSON) y los ya enviados con éxito. */
+export interface ResumenCodisaOrdenes {
+  enviados: EnvioCodisaExitoso[]
+  pendientes: EnvioCodisaPendiente[]
+}
+
+export function obtenerResumenCodisaOrdenes(): ResumenCodisaOrdenes {
+  const enviados = Object.values(leerCodisaEnviados()).sort((a, b) => b.enviadoEn.localeCompare(a.enviadoEn))
+  const pendientes = Object.values(leerCodisaPendientes()).sort((a, b) => b.ultimoIntentoEn.localeCompare(a.ultimoIntentoEn))
+  return { enviados, pendientes }
+}
+
+/**
+ * Botón "Reenviar" manual desde Admin (`PanelCodisaOrdenes`): reintenta de
+ * inmediato el envío de un pedido que había quedado pendiente, reutilizando
+ * EXACTAMENTE el mismo JSON que se armó entonces (no se reconstruye desde la
+ * venta) — así el operador reenvía tal cual lo que falló, sin que un cambio
+ * posterior de catálogo/precio pueda alterar el pedido ya facturado. Delega
+ * en `enviarPedidoWsDf`, que ya registra el nuevo desenlace por su cuenta.
+ */
+export async function reenviarOrdenCodisaManual(ventaId: string): Promise<ResultadoOrdenCodisa | null> {
+  const pendientes = leerCodisaPendientes()
+  const item = pendientes[ventaId]
+  if (!item) return null
+  return enviarPedidoWsDf(item.payload)
+}
+
+/**
  * Envío real del pedido a Codisa (`WSDF_CONFIG.endpointOrden`). Devuelve un
  * resultado ya clasificado (`ResultadoOrdenCodisa`), análogo en espíritu a
  * `ResultadoDatafono` (ver `services/datafono.ts`), listo para mostrarse en
@@ -414,7 +553,7 @@ export function validarPedidoWsDf(payload: WsDfPayload): ValidacionWsDf {
  * `await`) y un fallo ahí no afecta ni retrasa el envío a Codisa ni el resto
  * del flujo del kiosko — `enviarVentaAws` maneja sus propios reintentos.
  */
-export async function enviarPedidoWsDf(payload: WsDfPayload): Promise<ResultadoOrdenCodisa> {
+async function intentarEnviarPedidoWsDf(payload: WsDfPayload): Promise<ResultadoOrdenCodisa> {
   if (envioOrdenEnCurso) {
     return {
       categoria: 'en-curso',
@@ -496,6 +635,21 @@ export async function enviarPedidoWsDf(payload: WsDfPayload): Promise<ResultadoO
   } finally {
     envioOrdenEnCurso = false
   }
+}
+
+/**
+ * Punto de entrada público: envía el pedido a Codisa delegando en
+ * `intentarEnviarPedidoWsDf` y, con el resultado ya resuelto (éxito o
+ * cualquier categoría de error), lo registra en la trazabilidad
+ * persistida que consume el panel de Admin (`registrarResultadoCodisaOrdenes`).
+ * Mantiene exactamente la misma firma que antes de este cambio, así que
+ * ningún llamador existente (`PaymentScreen.tsx`, `reenviarOrdenCodisaManual`
+ * arriba) necesita modificarse.
+ */
+export async function enviarPedidoWsDf(payload: WsDfPayload): Promise<ResultadoOrdenCodisa> {
+  const resultado = await intentarEnviarPedidoWsDf(payload)
+  registrarResultadoCodisaOrdenes(payload, resultado)
+  return resultado
 }
 
 /** Lee un campo de un registro de `data[]` probando varios alias posibles de clave, en orden de preferencia. */

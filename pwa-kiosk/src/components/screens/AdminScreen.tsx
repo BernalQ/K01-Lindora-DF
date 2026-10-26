@@ -14,6 +14,11 @@ import {
 import { DATAFONO_CONFIG, enviarTransaccionDatafono } from '../../services/datafono'
 import { CAJA_ID, STORAGE_KEY_CAJA_ID } from '../../services/consecutivo'
 import { obtenerResumenAwsVentas, reenviarVentaAwsManual, type EnvioAwsPendiente } from '../../services/awsVentas'
+import {
+  obtenerResumenCodisaOrdenes,
+  reenviarOrdenCodisaManual,
+  type EnvioCodisaPendiente,
+} from '../../services/wsdf'
 import type { Product } from '../../types/catalog'
 import type { VentaEnCola } from '../../types/order'
 import type { ResultadoDatafono } from '../../types/datafono'
@@ -28,7 +33,7 @@ interface AdminScreenProps {
 const PIN_VALIDO = '123456'
 const LARGO_PIN = 6
 
-type VistaAdmin = 'menu' | 'precio' | 'agotado' | 'ordenes' | 'cierre' | 'kiosko' | 'awsVentas'
+type VistaAdmin = 'menu' | 'precio' | 'agotado' | 'ordenes' | 'cierre' | 'kiosko' | 'awsVentas' | 'codisaOrdenes'
 
 /**
  * Pantalla de administración del kiosko, accesible desde el botón "ADMIN"
@@ -42,6 +47,10 @@ type VistaAdmin = 'menu' | 'precio' | 'agotado' | 'ordenes' | 'cierre' | 'kiosko
  *   más abajo en este archivo).
  * - Ver el estado de los envíos de venta a nuestro backend en AWS: cuáles se
  *   enviaron y cuáles faltan, con reenvío manual (`PanelAwsVentas` más abajo).
+ * - Ver la trazabilidad de los pedidos enviados a Codisa (`df_api.php`):
+ *   cuáles quedaron pendientes con su código/categoría de error y el JSON
+ *   exacto que se intentó mandar, con reenvío manual (`PanelCodisaOrdenes`
+ *   más abajo).
  *
  * Precio y agotado se aplican mutando directamente el array `PRODUCTS`
  * compartido (ver `services/catalogOverrides.ts`), así que el resto de la
@@ -79,6 +88,7 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
         {vista === 'cierre' && <PanelCierreCaja />}
         {vista === 'kiosko' && <PanelKiosko />}
         {vista === 'awsVentas' && <PanelAwsVentas />}
+        {vista === 'codisaOrdenes' && <PanelCodisaOrdenes />}
       </main>
     </div>
   )
@@ -191,6 +201,7 @@ function MenuAdmin({ onSeleccionar }: { onSeleccionar: (vista: VistaAdmin) => vo
     { vista: 'cierre', label: t('admin.menuCierreCaja') },
     { vista: 'kiosko', label: t('admin.menuKiosko') },
     { vista: 'awsVentas', label: t('admin.menuAwsVentas') },
+    { vista: 'codisaOrdenes', label: t('admin.menuCodisaOrdenes') },
   ]
 
   return (
@@ -1086,6 +1097,129 @@ function PanelAwsVentas() {
         </h3>
         {resumen.enviados.length === 0 ? (
           <p className="text-sm text-wood-500">{t('admin.awsVentasEnviadosVacio')}</p>
+        ) : (
+          <div className="flex flex-col divide-y divide-wood-100 rounded-xl bg-white shadow-sm shadow-wood-900/5">
+            {resumen.enviados.map((item) => (
+              <div key={item.ventaId} className="flex items-center justify-between gap-3 px-4 py-3">
+                <span className="font-mono font-semibold text-wood-900">#{item.ventaId}</span>
+                <span className="text-xs text-wood-500">{formatFechaHoraAdmin(item.enviadoEn)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Panel: trazabilidad de pedidos enviados a Codisa (enviados /        */
+/* pendientes), con código de error, JSON exacto y reenvío manual.     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Muestra el estado de `services/wsdf.ts` (integración con Codisa,
+ * `df_api.php?action=orden`): qué pedidos ya confirmó Codisa recibidos y
+ * cuáles quedaron pendientes, con la categoría/código de error recibido
+ * (`EnvioCodisaPendiente.categoriaError`), el mensaje descriptivo, y el JSON
+ * exacto que se intentó enviar (visible con "Ver JSON"), más un botón de
+ * reenvío manual por cada pendiente (`reenviarOrdenCodisaManual`). A
+ * diferencia de `PanelAwsVentas`, Codisa no tiene reintento automático en
+ * segundo plano (ver comentario de archivo en `wsdf.ts`), así que no hay
+ * noción de "agotado" ni tope de intentos — sólo cuántas veces se ha
+ * reintentado hasta ahora.
+ */
+function PanelCodisaOrdenes() {
+  const { t } = useLanguage()
+  const [resumen, setResumen] = useState(() => obtenerResumenCodisaOrdenes())
+  const [reenviando, setReenviando] = useState<string | null>(null)
+  const [jsonVisible, setJsonVisible] = useState<string | null>(null)
+
+  const refrescar = () => setResumen(obtenerResumenCodisaOrdenes())
+
+  const reenviar = async (ventaId: string) => {
+    setReenviando(ventaId)
+    try {
+      await reenviarOrdenCodisaManual(ventaId)
+    } finally {
+      setReenviando(null)
+      refrescar()
+    }
+  }
+
+  const alternarJson = (ventaId: string) => {
+    setJsonVisible((actual) => (actual === ventaId ? null : ventaId))
+  }
+
+  return (
+    <div className="mx-auto flex max-w-2xl flex-col gap-8">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-wood-900">{t('admin.codisaOrdenesTitle')}</h2>
+        <button
+          type="button"
+          onClick={refrescar}
+          className="rounded-full bg-wood-100 px-4 py-2 text-sm font-semibold text-wood-700 transition-transform active:scale-95"
+        >
+          {t('admin.awsVentasRefrescar')}
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <h3 className="text-sm font-bold tracking-wide text-wood-500 uppercase">
+          {t('admin.codisaOrdenesPendientesTitle', { cantidad: String(resumen.pendientes.length) })}
+        </h3>
+        {resumen.pendientes.length === 0 ? (
+          <p className="text-sm text-wood-500">{t('admin.codisaOrdenesPendientesVacio')}</p>
+        ) : (
+          <div className="flex flex-col divide-y divide-wood-100 rounded-xl bg-white shadow-sm shadow-wood-900/5">
+            {resumen.pendientes.map((item: EnvioCodisaPendiente) => (
+              <div key={item.ventaId} className="flex flex-col gap-2 px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-mono font-bold text-wood-900">#{item.ventaId}</span>
+                  <span className="shrink-0 rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-700">
+                    {item.categoriaError}
+                  </span>
+                </div>
+                <p className="text-xs text-wood-500">{item.ultimoError}</p>
+                <p className="text-xs text-wood-400">
+                  {t('admin.codisaOrdenesUltimoIntento', { fecha: formatFechaHoraAdmin(item.ultimoIntentoEn) })}
+                  {' · '}
+                  {t('admin.codisaOrdenesIntentos', { intentos: String(item.intentos) })}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => reenviar(item.ventaId)}
+                    disabled={reenviando === item.ventaId}
+                    className="self-start rounded-xl bg-brand-red px-4 py-2 text-sm font-bold text-white transition-transform active:scale-95 disabled:opacity-60"
+                  >
+                    {reenviando === item.ventaId ? t('admin.awsVentasReenviando') : t('admin.awsVentasReenviar')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => alternarJson(item.ventaId)}
+                    className="self-start rounded-xl bg-wood-100 px-4 py-2 text-sm font-bold text-wood-700 transition-transform active:scale-95"
+                  >
+                    {jsonVisible === item.ventaId ? t('admin.codisaOrdenesOcultarJson') : t('admin.codisaOrdenesVerJson')}
+                  </button>
+                </div>
+                {jsonVisible === item.ventaId && (
+                  <pre className="max-h-64 overflow-auto rounded-lg bg-wood-950 p-3 text-xs text-cream-50">
+                    {JSON.stringify(item.payload, null, 2)}
+                  </pre>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <h3 className="text-sm font-bold tracking-wide text-wood-500 uppercase">
+          {t('admin.codisaOrdenesEnviadosTitle', { cantidad: String(resumen.enviados.length) })}
+        </h3>
+        {resumen.enviados.length === 0 ? (
+          <p className="text-sm text-wood-500">{t('admin.codisaOrdenesEnviadosVacio')}</p>
         ) : (
           <div className="flex flex-col divide-y divide-wood-100 rounded-xl bg-white shadow-sm shadow-wood-900/5">
             {resumen.enviados.map((item) => (
