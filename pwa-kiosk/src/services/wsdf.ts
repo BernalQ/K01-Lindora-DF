@@ -45,8 +45,22 @@ export const WSDF_CONFIG = {
    * hardcodeado (ver hallazgo de auditoría).
    */
   idTienda: import.meta.env.VITE_CODISA_ID_TIENDA || '22',
-  /** ID de cliente genérico para ventas sin factura electrónica (consumidor final / anónimo). */
-  idClienteAnonimo: '1',
+  /**
+   * ID de cliente genérico para ventas sin factura electrónica (consumidor
+   * final / anónimo), según el maestro de clientes de Codisa para esta
+   * tienda (`id_tienda` arriba) — NO es un valor arbitrario nuestro.
+   *
+   * Confirmado como "0" directamente por Codisa (equipo CF) tras reproducir
+   * el rechazo real en su lado: con `id_cliente: "1"` (valor anterior, ver
+   * hallazgo de auditoría) Oracle devolvía
+   * `ORA-02291: integrity constraint (NAF6.FK_ENCABEZADO_CLIENTES) violated
+   * - parent key not found` — "1" no existe como cliente registrado en su
+   * tabla CLIENTES para esta tienda, así que TODA venta sin factura se
+   * rechazaba siempre, sin importar ningún otro campo del pedido. Con
+   * `id_cliente: "0"` esa restricción ya no se viola (se probó un pedido
+   * completo contra el ambiente real de Codisa y pasó esa validación).
+   */
+  idClienteAnonimo: '0',
   endpointCliente: 'http://localhost:4000/codisa/cliente',
   endpointOrden: 'http://localhost:4000/codisa/orden',
 }
@@ -622,9 +636,27 @@ async function intentarEnviarPedidoWsDf(payload: WsDfPayload): Promise<Resultado
       // aunque el status HTTP no sea 2xx. Si no se puede leer (ej. Codisa
       // respondiera directo con una página de error no-JSON, caso ya poco
       // probable al pasar por el proxy), se cae al mensaje genérico de antes.
-      const cuerpoError = await res.json().catch(() => null as { mensaje?: string } | null)
-      const detalle = typeof cuerpoError?.mensaje === 'string' ? ` ${cuerpoError.mensaje}` : ''
-      registrarLogCodisa('orden', 'response', { httpStatus: res.status, body: cuerpoError })
+      //
+      // Igual que en la respuesta 2xx de abajo, Codisa puede devolver este
+      // cuerpo envuelto en un arreglo de un elemento — `[{ error: '...' }]`
+      // en vez de `{ mensaje: '...' }` directo (confirmado con un curl real:
+      // un pedido rechazado por Codisa respondió HTTP 400 con
+      // `[{"success":"0","error":"El pedido no fué posteado"}]`) — sin
+      // desenvolver el arreglo, el panel de Admin mostraba sólo el genérico
+      // "error HTTP inesperado (400)", perdiendo el motivo real que Codisa sí
+      // mandó (ver hallazgo de auditoría).
+      const crudoError = await res.json().catch(() => null as unknown)
+      const cuerpoError = (Array.isArray(crudoError) ? crudoError[0] : crudoError) as
+        | { mensaje?: string; error?: string }
+        | null
+      const mensajeCodisa =
+        typeof cuerpoError?.mensaje === 'string'
+          ? cuerpoError.mensaje
+          : typeof cuerpoError?.error === 'string'
+            ? cuerpoError.error
+            : undefined
+      const detalle = mensajeCodisa ? ` ${mensajeCodisa}` : ''
+      registrarLogCodisa('orden', 'response', { httpStatus: res.status, body: crudoError })
       return {
         categoria: 'error-http',
         mensaje: `Codisa respondió con un error HTTP inesperado (${res.status}).${detalle}`,
@@ -632,26 +664,41 @@ async function intentarEnviarPedidoWsDf(payload: WsDfPayload): Promise<Resultado
       }
     }
 
-    const body = await res.json().catch(() => null as Record<string, unknown> | null)
-    registrarLogCodisa('orden', 'response', body)
+    const crudo = await res.json().catch(() => null as unknown)
+    registrarLogCodisa('orden', 'response', crudo)
+
+    // A diferencia de `?action=cliente` (siempre un objeto plano, ver
+    // `RespuestaClienteCodisa`), `?action=orden` puede venir envuelto en un
+    // arreglo de un solo elemento — `[{ success: '0', error: '...' }]` en
+    // vez de `{ success: '0', error: '...' }` directo (confirmado con un
+    // curl real a Codisa, ver hallazgo de auditoría: antes se leía
+    // `body.success` directo sobre el arreglo, que siempre es `undefined`,
+    // así que NINGUNA respuesta de Codisa se detectaba como éxito ni
+    // mostraba su mensaje real, sin importar qué contestara realmente).
+    const body = (Array.isArray(crudo) ? crudo[0] : crudo) as Record<string, unknown> | null
 
     // Documentado por Codisa: HTTP 200 → { success: 1, mensaje: 'OK', No_Transa_Mov }
-    // (envío aceptado) o { success: 0, mensaje: '<error>' } (rechazado) — se
-    // acepta también `coderror: '0'` como alias de éxito, por consistencia con
-    // la respuesta de `?action=cliente`.
+    // (envío aceptado) o { success: 0, mensaje/error: '<error>' } (rechazado)
+    // — se acepta también `coderror: '0'` como alias de éxito, por
+    // consistencia con la respuesta de `?action=cliente`. El mensaje puede
+    // venir en `mensaje` (documentado) o en `error` (visto en la práctica),
+    // se acepta cualquiera de los dos.
     const exito = body != null && (body.success === 1 || body.success === '1' || body.coderror === '0')
+    const mensajeCodisa =
+      typeof body?.mensaje === 'string' ? body.mensaje : typeof body?.error === 'string' ? body.error : undefined
+
     if (exito) {
       agregarIdPedidoEnviado(payload.pedido.id)
       return {
         categoria: 'enviado',
-        mensaje: typeof body?.mensaje === 'string' ? body.mensaje : 'Pedido enviado correctamente.',
+        mensaje: mensajeCodisa ?? 'Pedido enviado correctamente.',
         permiteReintentar: false,
       }
     }
 
     return {
       categoria: 'rechazado',
-      mensaje: typeof body?.mensaje === 'string' ? body.mensaje : 'Codisa rechazó el pedido.',
+      mensaje: mensajeCodisa ?? 'Codisa rechazó el pedido.',
       permiteReintentar: true,
     }
   } finally {
