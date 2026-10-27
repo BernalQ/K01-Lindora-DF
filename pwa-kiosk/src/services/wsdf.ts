@@ -16,13 +16,26 @@ import type {
  * Configuración e integración real con el API `df_api.php` de Codisa —
  * factura electrónica (búsqueda de cliente por cédula + envío de pedido).
  *
- * Host: `10.0.1.24`, puerto 443 (https). Es una red/host DISTINTO al
- * gateway local del kiosko (`RED_CONFIG.ipGateway` = `10.0.5.250`, ver
- * `services/redConfig.ts`, usado por AWS IoT y por el datáfono BAC) — por
- * eso NO se reutiliza `RED_CONFIG` aquí, se hardcodea el host de Codisa
- * directamente en este archivo, siguiendo el mismo patrón ya usado para
- * otras integraciones externas (`BRIDGE_URL` en `services/facturacion.ts`,
- * `DATAFONO_CONFIG.endpoint` en `services/datafono.ts`).
+ * Host real de Codisa: `10.0.1.24`, puerto 443 (https) — pero `endpointCliente`/
+ * `endpointOrden` de abajo NO apuntan ahí directo. Apuntan al `print-bridge`
+ * local (`http://localhost:4000`, ver `BRIDGE_URL` en `services/facturacion.ts`,
+ * mismo servicio), que hace de proxy server-to-server hacia Codisa (ver
+ * `print-bridge/src/routes/codisa.ts`).
+ *
+ * Por qué el proxy en vez de llamar directo: el servidor de Codisa no
+ * responde correctamente al preflight CORS (`OPTIONS`) que todo navegador
+ * manda antes de un POST con `Content-Type: application/json` entre
+ * orígenes distintos (el kiosko sirve la PWA en `http://localhost:3000`,
+ * distinto origen a `https://10.0.1.24`) — Codisa le devuelve 400 Bad
+ * Request a ese preflight, y el navegador nunca llega a mandar el POST real
+ * (el mismo JSON sí funciona probado con Postman, porque Postman no aplica
+ * CORS). Como el equipo de Codisa no tiene a corto plazo ese arreglo
+ * disponible de su lado, se resolvió enteramente del lado del kiosko: una
+ * petición Node-a-servidor (el `print-bridge`) no está sujeta a CORS en
+ * absoluto, así que hace de intermediario y reenvía la respuesta de Codisa
+ * tal cual de vuelta a la PWA. Si en el futuro Codisa agrega los headers de
+ * CORS necesarios en su servidor, este proxy deja de ser estrictamente
+ * necesario, pero no hace daño dejarlo (misma forma de JSON de ida y vuelta).
  */
 export const WSDF_CONFIG = {
   /**
@@ -34,8 +47,8 @@ export const WSDF_CONFIG = {
   idTienda: import.meta.env.VITE_CODISA_ID_TIENDA || '22',
   /** ID de cliente genérico para ventas sin factura electrónica (consumidor final / anónimo). */
   idClienteAnonimo: '1',
-  endpointCliente: 'https://10.0.1.24/kiosko/df_api.php?action=cliente',
-  endpointOrden: 'https://10.0.1.24/kiosko/df_api.php?action=orden',
+  endpointCliente: 'http://localhost:4000/codisa/cliente',
+  endpointOrden: 'http://localhost:4000/codisa/orden',
 }
 
 /** Longitud exacta de una cédula física costarricense (9 dígitos, sin guiones). */
@@ -602,10 +615,19 @@ async function intentarEnviarPedidoWsDf(payload: WsDfPayload): Promise<Resultado
     }
 
     if (!res.ok) {
-      registrarLogCodisa('orden', 'response', { httpStatus: res.status })
+      // El `print-bridge` (ver `routes/codisa.ts` ahí) siempre devuelve JSON
+      // válido con un `mensaje` descriptivo, incluso en sus propios fallos de
+      // conexión hacia Codisa (ej. 502 "No se pudo contactar a Codisa: ...")
+      // — se intenta leerlo para no perder ese detalle en el panel de Admin,
+      // aunque el status HTTP no sea 2xx. Si no se puede leer (ej. Codisa
+      // respondiera directo con una página de error no-JSON, caso ya poco
+      // probable al pasar por el proxy), se cae al mensaje genérico de antes.
+      const cuerpoError = await res.json().catch(() => null as { mensaje?: string } | null)
+      const detalle = typeof cuerpoError?.mensaje === 'string' ? ` ${cuerpoError.mensaje}` : ''
+      registrarLogCodisa('orden', 'response', { httpStatus: res.status, body: cuerpoError })
       return {
         categoria: 'error-http',
-        mensaje: `Codisa respondió con un error HTTP inesperado (${res.status}).`,
+        mensaje: `Codisa respondió con un error HTTP inesperado (${res.status}).${detalle}`,
         permiteReintentar: true,
       }
     }
@@ -756,10 +778,15 @@ export async function buscarClienteCodisa(cedulaCruda: string): Promise<Resultad
   }
 
   if (!res.ok) {
-    registrarLogCodisa('cliente', 'response', { httpStatus: res.status })
+    // Ver comentario equivalente en `enviarPedidoWsDf`: el `print-bridge`
+    // siempre devuelve JSON con `mensaje`, incluso en sus propios fallos de
+    // conexión — se intenta leerlo para no perder ese detalle.
+    const cuerpoError = await res.json().catch(() => null as { mensaje?: string } | null)
+    const detalle = typeof cuerpoError?.mensaje === 'string' ? ` ${cuerpoError.mensaje}` : ''
+    registrarLogCodisa('cliente', 'response', { httpStatus: res.status, body: cuerpoError })
     return {
       categoria: 'error-conexion',
-      mensaje: `Codisa respondió con un error HTTP inesperado (${res.status}) al buscar el cliente.`,
+      mensaje: `Codisa respondió con un error HTTP inesperado (${res.status}) al buscar el cliente.${detalle}`,
     }
   }
 

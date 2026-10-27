@@ -6,6 +6,7 @@ import { printRouter } from './routes/print.js'
 import { clientesRouter } from './routes/clientes.js'
 import { facturaRouter } from './routes/factura.js'
 import { ventasRouter } from './routes/ventas.js'
+import { codisaRouter } from './routes/codisa.js'
 import { FACTURAS_DIR, asegurarCarpetaDatos } from './data/paths.js'
 import { iniciarServidorKioskoSync } from './kioskoSync/server.js'
 
@@ -61,6 +62,7 @@ app.use(printRouter)
 app.use(clientesRouter)
 app.use(facturaRouter)
 app.use(ventasRouter)
+app.use(codisaRouter)
 
 app.listen(PORT, () => {
   console.log(`[print-bridge] escuchando en http://localhost:${PORT}`)
