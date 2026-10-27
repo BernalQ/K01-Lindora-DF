@@ -3,6 +3,10 @@ import { guardarCliente } from '../../services/facturacion'
 import { completarTipoPersonaPorCedula } from '../../services/wsdf'
 import type { Cliente } from '../../types/factura'
 import { useLanguage } from '../../context/useLanguage'
+import VirtualKeyboard, { type VirtualKeyboardLayout } from '../ui/VirtualKeyboard'
+
+/** Un solo campo activo a la vez (el formulario es secuencial), así que un único `VirtualKeyboard` compartido alcanza — se reconecta a `value`/`onChange` del campo que tenga foco. */
+type CampoActivo = 'nombre' | 'correo' | 'telefono' | 'direccion' | null
 
 interface RegistroClienteScreenProps {
   cedula: string
@@ -34,6 +38,20 @@ export default function RegistroClienteScreen({ cedula, onBack, onGuardado }: Re
   const [direccion, setDireccion] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [avisoSinConexion, setAvisoSinConexion] = useState(false)
+  // Igual que en `CedulaScreen`: controla el teclado táctil propio en vez de
+  // depender del teclado del sistema operativo del kiosko. Los 4 inputs son
+  // `readOnly` (ver abajo), así que esto es la única forma de escribir.
+  const [campoActivo, setCampoActivo] = useState<CampoActivo>(null)
+
+  const CONFIG_CAMPO: Record<
+    Exclude<CampoActivo, null>,
+    { layout: VirtualKeyboardLayout; valor: string; setValor: (v: string) => void; maxLength?: number }
+  > = {
+    nombre: { layout: 'text', valor: nombre, setValor: setNombre },
+    correo: { layout: 'email', valor: correo, setValor: setCorreo },
+    telefono: { layout: 'phone', valor: telefono, setValor: setTelefono, maxLength: 15 },
+    direccion: { layout: 'text', valor: direccion, setValor: setDireccion },
+  }
 
   // Campos opcionales: vacío siempre es válido, sólo se exige el formato
   // correcto cuando el operador/cliente escribió algo (ver hallazgo de
@@ -82,9 +100,16 @@ export default function RegistroClienteScreen({ cedula, onBack, onGuardado }: Re
         <h1 className="text-xl font-semibold text-cream-50">{t('registro.title')}</h1>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-6 pb-32">
+      <main className={`flex-1 overflow-y-auto p-6 ${campoActivo ? 'pb-96' : 'pb-32'}`}>
         <p className="mb-6 text-wood-600">{t('registro.subtitle', { cedula })}</p>
 
+        {/*
+          Los 4 inputs son `readOnly` a propósito (ver comentario en
+          `VirtualKeyboard`): evita que el teclado táctil del sistema
+          operativo del kiosko aparezca y compita con el teclado propio de
+          abajo. `onFocus` marca cuál campo queda "activo" para reconectarle
+          el `VirtualKeyboard` compartido (ver `CONFIG_CAMPO`).
+        */}
         <div className="mx-auto flex max-w-md flex-col gap-4">
           <div>
             <label htmlFor="nombre" className="mb-1 block text-base font-bold text-wood-900">
@@ -93,9 +118,11 @@ export default function RegistroClienteScreen({ cedula, onBack, onGuardado }: Re
             <input
               id="nombre"
               type="text"
+              inputMode="none"
+              readOnly
               autoFocus
               value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
+              onFocus={() => setCampoActivo('nombre')}
               className="w-full rounded-xl border-2 border-wood-200 bg-white px-4 py-3 text-lg text-wood-900 outline-none focus:border-brand-red"
             />
           </div>
@@ -107,9 +134,10 @@ export default function RegistroClienteScreen({ cedula, onBack, onGuardado }: Re
             <input
               id="correo"
               type="email"
-              inputMode="email"
+              inputMode="none"
+              readOnly
               value={correo}
-              onChange={(e) => setCorreo(e.target.value)}
+              onFocus={() => setCampoActivo('correo')}
               className={`w-full rounded-xl border-2 bg-white px-4 py-3 text-lg text-wood-900 outline-none focus:border-brand-red ${
                 correoValido ? 'border-wood-200' : 'border-amber-400'
               }`}
@@ -124,9 +152,10 @@ export default function RegistroClienteScreen({ cedula, onBack, onGuardado }: Re
             <input
               id="telefono"
               type="tel"
-              inputMode="tel"
+              inputMode="none"
+              readOnly
               value={telefono}
-              onChange={(e) => setTelefono(e.target.value)}
+              onFocus={() => setCampoActivo('telefono')}
               className={`w-full rounded-xl border-2 bg-white px-4 py-3 text-lg text-wood-900 outline-none focus:border-brand-red ${
                 telefonoValido ? 'border-wood-200' : 'border-amber-400'
               }`}
@@ -141,8 +170,10 @@ export default function RegistroClienteScreen({ cedula, onBack, onGuardado }: Re
             <input
               id="direccion"
               type="text"
+              inputMode="none"
+              readOnly
               value={direccion}
-              onChange={(e) => setDireccion(e.target.value)}
+              onFocus={() => setCampoActivo('direccion')}
               className="w-full rounded-xl border-2 border-wood-200 bg-white px-4 py-3 text-lg text-wood-900 outline-none focus:border-brand-red"
             />
           </div>
@@ -155,18 +186,35 @@ export default function RegistroClienteScreen({ cedula, onBack, onGuardado }: Re
         </div>
       </main>
 
-      <div className="fixed inset-x-0 bottom-0 bg-wood-950 p-6">
-        <button
-          type="button"
-          onClick={handleGuardar}
-          disabled={!puedeGuardar}
-          className={`mx-auto block w-full max-w-md rounded-2xl py-5 text-xl font-bold transition-transform ${
-            puedeGuardar ? 'bg-brand-red text-white active:scale-98' : 'bg-wood-800 text-wood-500'
-          }`}
-        >
-          {guardando ? t('registro.guardando') : t('registro.guardar')}
-        </button>
-      </div>
+      {/*
+        El teclado y la barra fija de "Guardar" ocupan el mismo espacio
+        (`fixed inset-x-0 bottom-0`) — se muestran de forma excluyente: con
+        el teclado abierto, "Listo" (ver `VirtualKeyboard`) sólo lo cierra
+        (no hay `onEnter` acá, porque guardar requiere los 3 campos, no uno
+        solo); al cerrarlo vuelve a aparecer la barra de "Guardar" de abajo.
+      */}
+      {campoActivo ? (
+        <VirtualKeyboard
+          layout={CONFIG_CAMPO[campoActivo].layout}
+          value={CONFIG_CAMPO[campoActivo].valor}
+          onChange={CONFIG_CAMPO[campoActivo].setValor}
+          maxLength={CONFIG_CAMPO[campoActivo].maxLength}
+          onClose={() => setCampoActivo(null)}
+        />
+      ) : (
+        <div className="fixed inset-x-0 bottom-0 bg-wood-950 p-6">
+          <button
+            type="button"
+            onClick={handleGuardar}
+            disabled={!puedeGuardar}
+            className={`mx-auto block w-full max-w-md rounded-2xl py-5 text-xl font-bold transition-transform ${
+              puedeGuardar ? 'bg-brand-red text-white active:scale-98' : 'bg-wood-800 text-wood-500'
+            }`}
+          >
+            {guardando ? t('registro.guardando') : t('registro.guardar')}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

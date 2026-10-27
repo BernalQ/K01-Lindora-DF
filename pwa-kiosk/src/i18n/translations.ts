@@ -127,6 +127,11 @@ const dictionaries = {
     'registro.correoInvalido': 'El correo electrónico no tiene un formato válido.',
     'registro.telefonoInvalido': 'El teléfono no tiene un formato válido.',
 
+    'teclado.listo': 'Listo',
+    'teclado.espacio': 'Espacio',
+    'teclado.borrar': 'Borrar',
+    'teclado.mayusculas': 'Mayúsculas',
+
     'confirmation.orderConfirmed': '¡Pedido confirmado!',
     'confirmation.tableTotal': 'Mesa {{mesa}} · {{total}}',
     'confirmation.tickets': 'Tickets',
@@ -417,6 +422,11 @@ const dictionaries = {
     'registro.avisoSinConexion': 'Could not save to the local database; continuing anyway.',
     'registro.correoInvalido': 'The email address format is invalid.',
     'registro.telefonoInvalido': 'The phone number format is invalid.',
+
+    'teclado.listo': 'Done',
+    'teclado.espacio': 'Space',
+    'teclado.borrar': 'Backspace',
+    'teclado.mayusculas': 'Shift',
 
     'confirmation.orderConfirmed': 'Order confirmed!',
     'confirmation.tableTotal': 'Table {{mesa}} · {{total}}',

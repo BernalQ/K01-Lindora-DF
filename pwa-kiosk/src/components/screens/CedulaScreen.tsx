@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { buscarCliente } from '../../services/facturacion'
 import { buscarClienteCodisa, completarTipoPersonaPorCedula } from '../../services/wsdf'
 import CedulaErrorPopup, { type ErrorCedula } from '../ui/CedulaErrorPopup'
+import VirtualKeyboard from '../ui/VirtualKeyboard'
 import type { Cliente } from '../../types/factura'
 import { useLanguage } from '../../context/useLanguage'
 
@@ -29,6 +30,11 @@ export default function CedulaScreen({ onBack, onEncontrado, onNoEncontrado }: C
   const [cedula, setCedula] = useState('')
   const [buscando, setBuscando] = useState(false)
   const [errorCedula, setErrorCedula] = useState<ErrorCedula | null>(null)
+  // Controla el teclado táctil propio (ver `VirtualKeyboard`) en vez de
+  // depender de que el teclado del sistema operativo del kiosko se
+  // despliegue solo — el input de cédula es `readOnly` (ver abajo), así que
+  // esto es la única forma de escribir en él.
+  const [tecladoAbierto, setTecladoAbierto] = useState(false)
 
   const puedeBuscar = cedula.trim().length > 0 && !buscando
 
@@ -111,20 +117,28 @@ export default function CedulaScreen({ onBack, onEncontrado, onNoEncontrado }: C
         <h1 className="text-xl font-semibold text-cream-50">{t('cedula.title')}</h1>
       </header>
 
-      <main className="flex flex-1 flex-col items-center justify-center gap-6 p-6 text-center">
+      <main className={`flex flex-1 flex-col items-center justify-center gap-6 p-6 text-center ${tecladoAbierto ? 'pb-80' : ''}`}>
         <p className="max-w-sm text-lg text-wood-600">{t('cedula.subtitle')}</p>
 
         <div className="w-full max-w-sm text-left">
           <label htmlFor="cedula" className="mb-2 block text-lg font-bold text-wood-900">
             {t('cedula.label')}
           </label>
+          {/*
+            `readOnly` a propósito (ver comentario en `VirtualKeyboard`): evita
+            que el teclado táctil del sistema operativo del kiosko aparezca y
+            compita con el teclado propio de abajo — toda la escritura pasa
+            por `onChange` del `VirtualKeyboard`, nunca por tipeo directo en
+            este input. Sigue recibiendo foco (`onFocus`) para abrirlo.
+          */}
           <input
             id="cedula"
             type="text"
-            inputMode="numeric"
+            inputMode="none"
+            readOnly
             autoFocus
             value={cedula}
-            onChange={(e) => setCedula(e.target.value.replace(/[^0-9-]/g, ''))}
+            onFocus={() => setTecladoAbierto(true)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleBuscar()
             }}
@@ -144,6 +158,16 @@ export default function CedulaScreen({ onBack, onEncontrado, onNoEncontrado }: C
           {buscando ? t('cedula.buscando') : t('cedula.buscar')}
         </button>
       </main>
+
+      {tecladoAbierto && (
+        <VirtualKeyboard
+          layout="numeric"
+          value={cedula}
+          onChange={setCedula}
+          onEnter={handleBuscar}
+          onClose={() => setTecladoAbierto(false)}
+        />
+      )}
 
       {errorCedula && (
         <CedulaErrorPopup
