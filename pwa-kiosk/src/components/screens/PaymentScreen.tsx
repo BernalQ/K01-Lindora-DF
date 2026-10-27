@@ -54,6 +54,17 @@ const SUGERENCIAS = PRODUCTS.filter(
 /** Tarifa de IVA en Costa Rica, usada sólo para desglosar subtotal/impuestos en el resumen de pago. */
 const IVA_RATE = 0.13
 
+/**
+ * ⚠️ BYPASS TEMPORAL — SÓLO PARA HOY (revisión de envío a Codisa) ⚠️
+ * Mientras el datáfono BAC está devolviendo "TO" (ver troubleshooting con
+ * BAC Transaction Manager), este flag evita la llamada real a
+ * `enviarTransaccionDatafono` y simula una transacción aprobada, para poder
+ * seguir probando el flujo de envío de la orden a Codisa sin depender del
+ * datáfono. DEBE volver a `false` (o eliminarse este bloque) antes de
+ * procesar cobros reales de clientes.
+ */
+const BYPASS_DATAFONO_TEMPORAL = true
+
 interface PaymentScreenProps {
   onBack: () => void
   /** Navega al flujo de identificación del cliente (cédula → registro) para la factura electrónica. */
@@ -200,6 +211,22 @@ export default function PaymentScreen({
 
     setEstado('procesando')
     setResultadoDatafono(null)
+
+    // ⚠️ BYPASS TEMPORAL — SÓLO PARA HOY (ver constante arriba): no se llama
+    // al datáfono real, se simula una aprobación para poder revisar el envío
+    // a Codisa sin depender de Transaction Manager.
+    if (BYPASS_DATAFONO_TEMPORAL) {
+      setResultadoDatafono({
+        categoria: 'aprobada',
+        mensaje: 'Transacción simulada (bypass temporal del datáfono — revisar envío a Codisa).',
+        permiteReintentar: false,
+        responseCode: '00',
+        authorizationNumber: 'BYPASS',
+        referenceNumber: invoice,
+      })
+      return
+    }
+
     const resultado = await enviarTransaccionDatafono({
       transactionType: 'SALE',
       terminalId: DATAFONO_CONFIG.terminalId,
