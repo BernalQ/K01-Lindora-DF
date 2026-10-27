@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { Agent, fetch as undiciFetch } from 'undici'
 
 /**
  * Proxy server-to-server hacia el API `df_api.php` de Codisa (factura
@@ -42,6 +43,25 @@ const CODISA_HOST = 'https://10.0.1.24/kiosko/df_api.php'
  */
 const TIMEOUT_MS = 15000
 
+/**
+ * Codisa expone `df_api.php` por HTTPS sobre una IP interna con un
+ * certificado VENCIDO (confirmado con `curl -k` desde el kiosko: sin `-k`
+ * Node rechaza la conexión con `CERT_HAS_EXPIRED` — ver hallazgo de
+ * auditoría). El `fetch` global de Node (basado en `undici`) valida
+ * certificados por defecto y, a diferencia de curl, no distingue el motivo
+ * en el error que propaga (`fetch failed` genérico, sin detalle) — así que
+ * la petición nunca llegaba a recibir la respuesta real de Codisa.
+ *
+ * Este `Agent` desactiva esa validación (`rejectUnauthorized: false`) SÓLO
+ * para esta llamada puntual a Codisa (no se toca el `fetch` global de Node
+ * ni el resto de este servicio) — mismo riesgo que ya se acepta hoy al
+ * correr `curl -k` manualmente contra esta misma IP, simplemente aplicado
+ * también a las peticiones automáticas del proxy. Esto es un parche del
+ * lado nuestro para poder seguir operando; lo correcto sigue siendo que
+ * Codisa renueve ese certificado — vale la pena avisarles.
+ */
+const agenteSinValidarCertificado = new Agent({ connect: { rejectUnauthorized: false } })
+
 export const codisaRouter = Router()
 
 /**
@@ -55,11 +75,12 @@ async function reenviarACodisa(accion: 'orden' | 'cliente', body: unknown): Prom
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
-    const res = await fetch(`${CODISA_HOST}?action=${accion}`, {
+    const res = await undiciFetch(`${CODISA_HOST}?action=${accion}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: controller.signal,
+      dispatcher: agenteSinValidarCertificado,
     })
     const json = await res.json().catch(() => null)
     return { status: res.status, json }
