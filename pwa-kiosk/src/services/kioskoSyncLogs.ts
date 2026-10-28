@@ -17,6 +17,7 @@ export type TipoEventoSync =
   | 'Sincronización iniciada'
   | 'Sincronización completada'
   | 'Kiosko remoto no disponible'
+  | 'Kiosko remoto disponible de nuevo'
 
 export interface LogSyncEntry {
   timestamp: string

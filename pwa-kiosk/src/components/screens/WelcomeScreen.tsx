@@ -97,6 +97,23 @@ export default function WelcomeScreen({ onStart, onOpenAdmin }: WelcomeScreenPro
       <p className="absolute bottom-8 z-10 text-sm tracking-[0.3em] text-cream-200/50 uppercase sm:text-base">
         {t('welcome.slogan')}
       </p>
+
+      {/* Crédito del desarrollador: esquina inferior derecha, discreto
+          (opacidad baja, tipografía pequeña) para no competir con el slogan
+          centrado ni con el CTA principal — mismo nombre en ambos idiomas,
+          por lo que no hace falta pasar por `t()`. */}
+      <p className="absolute right-5 bottom-3 z-10 text-xs font-light tracking-wide text-cream-200/40 sm:right-7 sm:bottom-4 sm:text-sm">
+        Creado por ElevateConsultingCR
+      </p>
+
+      {/* Copyright del negocio: esquina inferior izquierda, mismo estilo
+          discreto que el crédito del desarrollador (al otro lado) — año fijo
+          en vez de calculado con `Date` porque este kiosko no se reinicia
+          seguido ni hace falta que se actualice solo; mismo texto en ambos
+          idiomas, por lo que no pasa por `t()`. */}
+      <p className="absolute bottom-3 left-5 z-10 text-xs font-light tracking-wide text-cream-200/40 sm:bottom-4 sm:left-7 sm:text-sm">
+        © 2026 Carnes Don Fernando
+      </p>
     </div>
   )
 }

@@ -33,12 +33,35 @@ import { useSyncStatusStore } from '../store/syncStatusStore'
 /** Tiempo máximo de espera por intento de red hacia el otro kiosko: debe fallar rápido para detectar "modo autónomo" sin congelar la UI. */
 const TIMEOUT_MS = 4_000
 
+/**
+ * Cuántas veces se intenta una misma operación (enviar un cambio real o
+ * verificar salud) contra el otro kiosko antes de darla por fallida y marcar
+ * `remotoDisponible: false` — que a su vez enciende el indicador "No Sync"
+ * en `AdminScreen.tsx` (`EstadoSincronizacion`, dentro de `PanelKiosko`).
+ * Antes era un solo intento ("fire and forget" puro); con una red local
+ * (Wi-Fi/LAN del restaurante) vale la pena un par de reintentos cortos antes
+ * de rendirse, para no marcar "No Sync" por un simple parpadeo momentáneo de
+ * la red.
+ */
+const MAX_INTENTOS = 3
+/** Espera entre reintentos — corta a propósito (no es un backoff largo): si el otro kiosko está vivo pero momentáneamente ocupado/reiniciando, 3 intentos de ~4s + 2 esperas de 800ms ya cubren varios segundos reales sin congelar la UI por mucho tiempo. */
+const ESPERA_ENTRE_INTENTOS_MS = 800
+
+function esperar(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function urlPendientesLocal(): string {
   return `http://localhost:${KIOSKO_SYNC_PORT}/kiosko-sync/pending`
 }
 
 function urlIncomingRemoto(): string {
   return `http://${ipOtroKiosko()}:${KIOSKO_SYNC_PORT}/kiosko-sync/incoming`
+}
+
+/** `GET /kiosko-sync/health` del OTRO kiosko (ver `print-bridge/src/kioskoSync/server.ts`) — usado sólo para comprobar salud, nunca para mandar ni aplicar datos (ver `verificarConexionRemota` abajo). */
+function urlHealthRemoto(): string {
+  return `http://${ipOtroKiosko()}:${KIOSKO_SYNC_PORT}/kiosko-sync/health`
 }
 
 async function conTimeout<T>(hacer: (signal: AbortSignal) => Promise<T>): Promise<T> {
@@ -52,21 +75,58 @@ async function conTimeout<T>(hacer: (signal: AbortSignal) => Promise<T>): Promis
 }
 
 /**
- * Actualiza `remotoDisponible` (ver `store/syncStatusStore.ts`) sólo cuando
- * cambia de valor, para no generar ruido de logs/renders en cada intento
- * exitoso repetido. Loguea "Kiosko remoto no disponible" únicamente en la
- * transición true -> false (requerimiento "Logging"); la reacción a la
- * transición false -> true ("ejecutar resincronización automática") vive en
- * `services/kioskoSyncPolling.ts`, que se suscribe al store — este archivo
- * sólo reporta el hecho, no decide qué hacer con él (evita una dependencia
- * circular con `services/kioskoSync.ts`).
+ * Ejecuta `intentar` hasta `MAX_INTENTOS` veces, deteniéndose en el primer
+ * éxito (requerimiento: "que intente 3 veces si no se sincronizó"). Devuelve
+ * `true` si algún intento tuvo éxito, `false` si los `MAX_INTENTOS` fallaron
+ * — en ese caso el llamador es quien decide marcar `remotoDisponible: false`
+ * (este helper no conoce el store, sólo reintenta).
+ */
+async function conReintentos(etiqueta: string, intentar: () => Promise<void>): Promise<boolean> {
+  for (let intento = 1; intento <= MAX_INTENTOS; intento++) {
+    try {
+      await intentar()
+      return true
+    } catch (err) {
+      const esUltimoIntento = intento === MAX_INTENTOS
+      console.log(
+        `[kioskoTransport] Intento ${intento}/${MAX_INTENTOS} fallido (${etiqueta})${
+          esUltimoIntento ? ', sin más reintentos' : ', reintentando'
+        }:`,
+        err,
+      )
+      if (!esUltimoIntento) await esperar(ESPERA_ENTRE_INTENTOS_MS)
+    }
+  }
+  return false
+}
+
+/**
+ * Actualiza `remotoDisponible` (ver `store/syncStatusStore.ts`). Siempre
+ * escribe en el store (para que `ultimaConexionExitosaEn` se refresque en
+ * cada éxito, incluso repetido — lo lee `EstadoSincronizacion` en
+ * `AdminScreen.tsx`), pero sólo loguea en las TRANSICIONES (true->false y
+ * false->true, requerimiento "Logging"), para no llenar la bitácora con la
+ * misma caída/recuperación una y otra vez.
+ *
+ * La transición false -> true (el otro kiosko volvió a contestar — ya sea
+ * porque un envío real tuvo éxito o, más seguido, porque lo detectó el
+ * chequeo de salud periódico de `services/kioskoSyncPolling.ts` ->
+ * `verificarSaludPeriodica`) es justo la señal que dispara
+ * `solicitarResincronizacion()` desde el `subscribe` de
+ * `services/kioskoSyncPolling.ts` (requerimiento: "si no está sync y el
+ * health check es positivo, intentar sincronizar de nuevo") — ese resync
+ * pasa de nuevo por `enviarAOtroKiosko` más abajo, así que conserva los
+ * mismos `MAX_INTENTOS` reintentos que cualquier otro envío. Este archivo
+ * sólo reporta el hecho (marca el store + loguea); la reacción vive allá
+ * para evitar una dependencia circular con `services/kioskoSync.ts`.
  */
 function marcarConexion(disponible: boolean): void {
   const previo = useSyncStatusStore.getState().remotoDisponible
-  if (previo === disponible) return
   useSyncStatusStore.getState().fijarRemotoDisponible(disponible)
-  if (!disponible) {
+  if (previo && !disponible) {
     registrarEventoSync('Kiosko remoto no disponible')
+  } else if (!previo && disponible) {
+    registrarEventoSync('Kiosko remoto disponible de nuevo')
   }
 }
 
@@ -75,14 +135,20 @@ function marcarConexion(disponible: boolean): void {
  * procesarlo del otro lado — "mesaSync" | "catalogSync" | "syncConfigRequest"
  * | "syncConfigResponse", ver `services/kioskoSyncPolling.ts`). "Fire and
  * forget" desde el punto de vista del llamador (no se espera la promesa en
- * `mesaLocks.ts`/`catalogOverrides.ts`, que son funciones síncronas): si la
- * red falla o el otro kiosko no contesta a tiempo, sólo se marca
- * `remotoDisponible: false` y se sigue — este kiosko YA aplicó el cambio
- * localmente antes de llamar aquí (requerimiento "Modo autónomo": la
- * operación local nunca depende de que el otro kiosko esté disponible).
+ * `mesaLocks.ts`/`catalogOverrides.ts`, que son funciones síncronas): este
+ * kiosko YA aplicó el cambio localmente antes de llamar aquí (requerimiento
+ * "Modo autónomo": la operación local nunca depende de que el otro kiosko
+ * esté disponible).
+ *
+ * Reintenta hasta `MAX_INTENTOS` veces (ver `conReintentos`) antes de marcar
+ * `remotoDisponible: false` — sólo se intenta reenviar cuando HAY un cambio
+ * real que mandar (esta función se llama una vez por cada cambio de
+ * mesa/catálogo, nunca en un bucle de fondo sin motivo); el chequeo de salud
+ * periódico que SÍ corre en segundo plano sin depender de que haya cambios
+ * vive aparte, en `verificarConexionRemota` abajo.
  */
 export async function enviarAOtroKiosko(tipo: string, mensaje: unknown): Promise<void> {
-  try {
+  const exito = await conReintentos(`enviar "${tipo}"`, async () => {
     const res = await conTimeout((signal) =>
       fetch(urlIncomingRemoto(), {
         method: 'POST',
@@ -92,11 +158,28 @@ export async function enviarAOtroKiosko(tipo: string, mensaje: unknown): Promise
       }),
     )
     if (!res.ok) throw new Error(`Error HTTP ${res.status}`)
-    marcarConexion(true)
-  } catch (err) {
-    console.log(`[kioskoTransport] No se pudo enviar "${tipo}" al otro kiosko:`, err)
-    marcarConexion(false)
-  }
+  })
+  marcarConexion(exito)
+}
+
+/**
+ * Comprobación de salud pura del otro kiosko — NO manda ni aplica ningún
+ * dato de mesas/catálogo, sólo pregunta "¿estás vivo?" (`GET
+ * /kiosko-sync/health`). Existe para que el indicador "Sincronizado"/"No
+ * Sync" de `AdminScreen.tsx` refleje la realidad incluso en ratos sin ningún
+ * cambio real que enviar (si sólo dependiera de `enviarAOtroKiosko`, una
+ * caída del otro kiosko podría pasar desapercibida hasta el próximo cambio
+ * de precio o mesa). Se usa desde el chequeo periódico en segundo plano de
+ * `services/kioskoSyncPolling.ts` y desde el botón "Verificar ahora" del
+ * panel de kiosko. Mismos `MAX_INTENTOS` reintentos que un envío real.
+ */
+export async function verificarConexionRemota(): Promise<boolean> {
+  const exito = await conReintentos('verificar conexión', async () => {
+    const res = await conTimeout((signal) => fetch(urlHealthRemoto(), { signal }))
+    if (!res.ok) throw new Error(`Error HTTP ${res.status}`)
+  })
+  marcarConexion(exito)
+  return exito
 }
 
 /**

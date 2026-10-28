@@ -13,6 +13,8 @@ import {
 } from '../../services/tickets'
 import { DATAFONO_CONFIG, enviarTransaccionDatafono } from '../../services/datafono'
 import { CAJA_ID, STORAGE_KEY_CAJA_ID } from '../../services/consecutivo'
+import { verificarConexionRemota } from '../../services/kioskoTransport'
+import { useSyncStatusStore } from '../../store/syncStatusStore'
 import { obtenerResumenAwsVentas, reenviarVentaAwsManual, type EnvioAwsPendiente } from '../../services/awsVentas'
 import {
   obtenerResumenCodisaOrdenes,
@@ -972,6 +974,8 @@ function PanelKiosko() {
         })}
       </div>
 
+      <EstadoSincronizacion />
+
       {kioskoPendiente && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl bg-white p-6 text-center shadow-2xl">
@@ -998,6 +1002,78 @@ function PanelKiosko() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Indicador de sincronización con el otro kiosko (dentro de            */
+/* PanelKiosko, ver arriba).                                           */
+/* ------------------------------------------------------------------ */
+
+/** Formatea el timestamp (epoch ms) de la última conexión exitosa con el otro kiosko para mostrarlo en el panel; `null` si todavía no se ha confirmado ninguna desde que arrancó esta PWA (ver `store/syncStatusStore.ts`). */
+function formatUltimaConexionSync(timestamp: number | null): string | null {
+  if (timestamp === null) return null
+  return new Date(timestamp).toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'medium' })
+}
+
+/**
+ * Indicador visible de sincronización entre kioskos (requerimiento: "que
+ * intente 3 veces, si no se sincronizó que ponga 'No Sync' en el admin page"
+ * — los 3 reintentos viven en `services/kioskoTransport.ts` ->
+ * `MAX_INTENTOS`; este componente sólo LEE el resultado). Reactivo: se
+ * actualiza solo con cada intento real de envío de un cambio (mesa/catálogo)
+ * Y con el chequeo de salud en segundo plano de
+ * `services/kioskoSyncPolling.ts` — no hace falta recargar ni reabrir este
+ * panel para que refleje una caída o una recuperación del otro kiosko. El
+ * botón "Verificar ahora" dispara una comprobación inmediata (mismos 3
+ * reintentos) para no tener que esperar al próximo ciclo del chequeo
+ * periódico.
+ */
+function EstadoSincronizacion() {
+  const { t } = useLanguage()
+  const remotoDisponible = useSyncStatusStore((s) => s.remotoDisponible)
+  const ultimaConexionExitosaEn = useSyncStatusStore((s) => s.ultimaConexionExitosaEn)
+  const [verificando, setVerificando] = useState(false)
+
+  const otro = KIOSKOS_DISPONIBLES.find((k) => k.cajaId !== CAJA_ID)
+  const numeroOtro = otro?.numero ?? '—'
+  const ultimaConexion = formatUltimaConexionSync(ultimaConexionExitosaEn)
+
+  const verificarAhora = async () => {
+    setVerificando(true)
+    try {
+      await verificarConexionRemota()
+    } finally {
+      setVerificando(false)
+    }
+  }
+
+  return (
+    <div
+      className={`flex flex-col gap-2 rounded-2xl border-2 px-5 py-4 ${
+        remotoDisponible ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span className={`h-3 w-3 shrink-0 rounded-full ${remotoDisponible ? 'bg-green-500' : 'bg-red-500'}`} />
+        <p className={`text-base font-bold ${remotoDisponible ? 'text-green-700' : 'text-red-700'}`}>
+          {remotoDisponible
+            ? t('admin.syncEstadoOk', { numero: numeroOtro })
+            : t('admin.syncEstadoFalla', { numero: numeroOtro })}
+        </p>
+      </div>
+      <p className="text-sm text-wood-500">
+        {ultimaConexion ? t('admin.syncUltimaConexion', { fecha: ultimaConexion }) : t('admin.syncSinConexionPrevia')}
+      </p>
+      <button
+        type="button"
+        onClick={verificarAhora}
+        disabled={verificando}
+        className="self-start rounded-xl bg-wood-900 px-4 py-2 text-sm font-bold text-cream-50 transition-transform active:scale-95 disabled:opacity-60"
+      >
+        {verificando ? t('admin.syncVerificando') : t('admin.syncVerificarAhora')}
+      </button>
     </div>
   )
 }
