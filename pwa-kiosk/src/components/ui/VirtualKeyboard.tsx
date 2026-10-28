@@ -32,12 +32,23 @@ const FILA_SIMBOLOS_1 = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
 const FILA_SIMBOLOS_2 = ['á', 'é', 'í', 'ó', 'ú', 'ü', '¿', '¡']
 const FILA_SIMBOLOS_3 = ['.', ',', '-', "'", '#']
 
+/**
+ * Estilo "self-order kiosk" moderno (McDonald's/Starbucks/Apple-ish):
+ * botones grandes, esquinas muy redondeadas, sombra suave en vez de borde
+ * grueso, bastante espacio entre teclas y una animación breve al presionar
+ * (`active:scale-*` + `duration-100`) — reemplaza el estilo anterior, más
+ * plano/"Windows clásico" (bordes finos, radios pequeños, sin sombra). Es
+ * un único componente para los 4 layouts, así que el cambio se refleja en
+ * todos a la vez (cédula, registro de cliente, etc.).
+ */
 const TECLA =
-  'flex h-14 min-w-[2.25rem] flex-1 items-center justify-center rounded-xl bg-white text-xl font-semibold text-wood-900 shadow-sm transition-transform active:scale-90 active:bg-wood-100'
+  'flex h-16 min-w-[2.5rem] flex-1 items-center justify-center rounded-2xl bg-white text-xl font-semibold text-wood-900 shadow-md shadow-wood-900/10 transition-all duration-100 active:scale-90 active:shadow-sm active:bg-wood-50'
 const TECLA_ESPECIAL =
-  'flex h-14 min-w-[3.5rem] items-center justify-center rounded-xl bg-wood-200 px-3 text-base font-semibold text-wood-900 shadow-sm transition-transform active:scale-90 active:bg-wood-300'
+  'flex h-16 min-w-[3.75rem] items-center justify-center rounded-2xl bg-wood-100 px-3 text-base font-semibold text-wood-900 shadow-md shadow-wood-900/10 transition-all duration-100 active:scale-90 active:bg-wood-200'
 const TECLA_ESPACIO =
-  'flex h-14 flex-1 items-center justify-center rounded-xl bg-white text-base font-semibold text-wood-500 shadow-sm transition-transform active:scale-95 active:bg-wood-100'
+  'flex h-16 flex-1 items-center justify-center rounded-2xl bg-white text-base font-semibold text-wood-500 shadow-md shadow-wood-900/10 transition-all duration-100 active:scale-95 active:bg-wood-50'
+/** Celda invisible, mismas dimensiones que `TECLA` — mantiene alineada la cuadrícula de 3 columnas cuando una posición no tiene tecla (ver `renderGridNumerico`, layout `numeric` ya no tiene guion). */
+const TECLA_VACIA = 'h-16 min-w-[2.5rem] flex-1'
 
 /**
  * Teclado táctil propio de la PWA — no depende de que el teclado en
@@ -82,10 +93,10 @@ export default function VirtualKeyboard({ layout, value, onChange, onEnter, onCl
     )
   }
 
-  const renderGridNumerico = (teclaExtra: string) => (
-    <div className="mx-auto grid w-full max-w-sm grid-cols-3 gap-2">
+  const renderGridNumerico = (teclaExtra: string | null) => (
+    <div className="mx-auto grid w-full max-w-sm grid-cols-3 gap-3">
       {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((c) => renderTecla(c))}
-      {renderTecla(teclaExtra)}
+      {teclaExtra ? renderTecla(teclaExtra) : <div className={TECLA_VACIA} />}
       {renderTecla('0')}
       <button type="button" onClick={borrar} className={TECLA} aria-label={t('teclado.borrar')}>
         ⌫
@@ -94,18 +105,18 @@ export default function VirtualKeyboard({ layout, value, onChange, onEnter, onCl
   )
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-wood-200 bg-cream-100 p-3 shadow-[0_-4px_12px_rgba(0,0,0,0.1)]">
-      <div className="mx-auto flex max-w-xl flex-col gap-2">
-        {layout === 'numeric' && renderGridNumerico('-')}
+    <div className="fixed inset-x-0 bottom-0 z-40 rounded-t-3xl bg-cream-100 p-4 shadow-[0_-8px_24px_rgba(0,0,0,0.12)]">
+      <div className="mx-auto flex max-w-xl flex-col gap-3">
+        {layout === 'numeric' && renderGridNumerico(null)}
         {layout === 'phone' && renderGridNumerico('+')}
 
         {(layout === 'text' || layout === 'email') && (
           <>
             {pagina === 'letras' ? (
               <>
-                <div className="flex justify-center gap-1.5">{FILA_1.map((c) => renderTecla(c))}</div>
-                <div className="flex justify-center gap-1.5">{FILA_2.map((c) => renderTecla(c))}</div>
-                <div className="flex justify-center gap-1.5">
+                <div className="flex justify-center gap-2">{FILA_1.map((c) => renderTecla(c))}</div>
+                <div className="flex justify-center gap-2">{FILA_2.map((c) => renderTecla(c))}</div>
+                <div className="flex justify-center gap-2">
                   <button
                     type="button"
                     onClick={() => setMayusculas((m) => !m)}
@@ -122,9 +133,9 @@ export default function VirtualKeyboard({ layout, value, onChange, onEnter, onCl
               </>
             ) : (
               <>
-                <div className="flex justify-center gap-1.5">{FILA_SIMBOLOS_1.map((c) => renderTecla(c))}</div>
-                <div className="flex justify-center gap-1.5">{FILA_SIMBOLOS_2.map((c) => renderTecla(c))}</div>
-                <div className="flex justify-center gap-1.5">
+                <div className="flex justify-center gap-2">{FILA_SIMBOLOS_1.map((c) => renderTecla(c))}</div>
+                <div className="flex justify-center gap-2">{FILA_SIMBOLOS_2.map((c) => renderTecla(c))}</div>
+                <div className="flex justify-center gap-2">
                   {FILA_SIMBOLOS_3.map((c) => renderTecla(c))}
                   <button type="button" onClick={borrar} className={TECLA_ESPECIAL} aria-label={t('teclado.borrar')}>
                     ⌫
@@ -133,7 +144,7 @@ export default function VirtualKeyboard({ layout, value, onChange, onEnter, onCl
               </>
             )}
 
-            <div className="flex justify-center gap-1.5">
+            <div className="flex justify-center gap-2">
               <button
                 type="button"
                 onClick={() => setPagina((p) => (p === 'letras' ? 'simbolos' : 'letras'))}
@@ -151,7 +162,7 @@ export default function VirtualKeyboard({ layout, value, onChange, onEnter, onCl
         )}
 
         {layout === 'phone' && (
-          <div className="flex justify-center gap-1.5">
+          <div className="flex justify-center gap-2">
             <button type="button" onClick={() => agregar(' ')} className={TECLA_ESPACIO}>
               {t('teclado.espacio')}
             </button>
@@ -161,7 +172,7 @@ export default function VirtualKeyboard({ layout, value, onChange, onEnter, onCl
         <button
           type="button"
           onClick={confirmar}
-          className="mt-1 w-full rounded-xl bg-brand-red py-3 text-lg font-bold text-white transition-transform active:scale-98"
+          className="mt-1 w-full rounded-2xl bg-brand-red py-4 text-lg font-bold text-white shadow-md shadow-brand-red/30 transition-all duration-100 active:scale-98 active:shadow-sm"
         >
           {t('teclado.listo')}
         </button>
