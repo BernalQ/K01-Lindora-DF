@@ -290,10 +290,17 @@ export function construirPedidoWsDf(venta: Venta): WsDfPayload {
   const conFactura = venta.tipoPago === 'factura' && !!venta.cliente
   const cliente = conFactura ? venta.cliente : undefined
 
+  // Jurídica (empresa): el nombre completo va tal cual en `nombre`, sin
+  // partirlo en apellidos — una razón social no tiene "apellido", y
+  // `dividirNombreCompleto` (pensado para personas físicas) lo cortaría mal
+  // (ej. "Ferretería El Tornillo S.A." quedaría con "Ferretería" en `nombre`
+  // y el resto repartido entre `apellido1`/`apellido2`).
   const { nombre, apellido1, apellido2 } =
-    cliente?.apellido1 !== undefined || cliente?.apellido2 !== undefined
-      ? { nombre: cliente?.nombre ?? '', apellido1: cliente?.apellido1 ?? '', apellido2: cliente?.apellido2 ?? '' }
-      : dividirNombreCompleto(cliente?.nombre ?? '')
+    cliente?.tipoPersona === 'J'
+      ? { nombre: cliente?.nombre ?? '', apellido1: '', apellido2: '' }
+      : cliente?.apellido1 !== undefined || cliente?.apellido2 !== undefined
+        ? { nombre: cliente?.nombre ?? '', apellido1: cliente?.apellido1 ?? '', apellido2: cliente?.apellido2 ?? '' }
+        : dividirNombreCompleto(cliente?.nombre ?? '')
 
   const detalle = venta.items.map((item) => {
     const totalLinea = item.price * item.quantity
@@ -721,10 +728,28 @@ export async function enviarPedidoWsDf(payload: WsDfPayload): Promise<ResultadoO
   return resultado
 }
 
-/** Lee un campo de un registro de `data[]` probando varios alias posibles de clave, en orden de preferencia. */
+/**
+ * Busca una clave dentro de `registro` sin distinguir mayúsculas/minúsculas.
+ * Necesario porque Codisa, en la práctica, devuelve las claves de `data[]`
+ * TODO EN MAYÚSCULAS (ej. `NOMBRE`, `TELEFONO`, `ID_IDENTIFICACION` —
+ * confirmado con una respuesta real), mientras que los alias de abajo
+ * (`campoClienteCodisa`) están en minúsculas; el acceso a propiedades de un
+ * objeto en JS SÍ distingue mayúsculas/minúsculas, así que sin esto ningún
+ * alias calzaba nunca y todos los campos llegaban vacíos (hallazgo real de
+ * soporte: cliente encontrado en Codisa, pero nombre/teléfono/dirección en
+ * blanco en el pedido enviado).
+ */
+function buscarValorSinMayusculas(registro: Record<string, unknown>, clave: string): unknown {
+  if (clave in registro) return registro[clave]
+  const claveMinuscula = clave.toLowerCase()
+  const claveEncontrada = Object.keys(registro).find((k) => k.toLowerCase() === claveMinuscula)
+  return claveEncontrada !== undefined ? registro[claveEncontrada] : undefined
+}
+
+/** Lee un campo de un registro de `data[]` probando varios alias posibles de clave, en orden de preferencia (ver `buscarValorSinMayusculas`). */
 function campoClienteCodisa(registro: Record<string, string>, ...claves: string[]): string {
   for (const clave of claves) {
-    const valor = registro[clave]
+    const valor = buscarValorSinMayusculas(registro, clave)
     if (valor !== undefined && valor !== null && String(valor).trim() !== '') return String(valor).trim()
   }
   return ''
@@ -737,6 +762,17 @@ function campoClienteCodisa(registro: Record<string, string>, ...claves: string[
  * `types/wsdf.ts`).
  */
 function mapearClienteCodisa(cedula: string, formato: FormatoCedula, registro: Record<string, string>): Cliente {
+  // Codisa, en la práctica, separa nombre y apellidos en 3 campos propios
+  // (`NOMBRE_PILA`/`APELLIDO1`/`APELLIDO2` — confirmado con una respuesta
+  // real), además de un `NOMBRE` que ya viene concatenado ("Bernal Quesada
+  // Acuña"). Cuando los 3 campos separados vienen, se usan tal cual —así
+  // `construirPedidoWsDf` los manda directo sin tener que volver a partir el
+  // nombre concatenado con `dividirNombreCompleto` (una heurística que puede
+  // fallar). Si no vienen separados (ej. sólo trae `nombre`/`razon_social`),
+  // se cae al nombre completo y se deja que `construirPedidoWsDf` lo divida.
+  const apellido1 = campoClienteCodisa(registro, 'apellido1', 'apellido_1', 'primer_apellido')
+  const apellido2 = campoClienteCodisa(registro, 'apellido2', 'apellido_2', 'segundo_apellido')
+  const nombrePila = campoClienteCodisa(registro, 'nombre_pila', 'nombrePila', 'primer_nombre')
   const nombreCompleto = campoClienteCodisa(
     registro,
     'nombre_completo',
@@ -746,9 +782,11 @@ function mapearClienteCodisa(cedula: string, formato: FormatoCedula, registro: R
     'razonSocial',
   )
   return {
-    cedula: campoClienteCodisa(registro, 'cedula', 'id_identificacion', 'identificacion') || cedula,
-    nombre: nombreCompleto,
-    correo: campoClienteCodisa(registro, 'correo', 'correo_electronico', 'correoElectronico', 'email'),
+    cedula: campoClienteCodisa(registro, 'cedula', 'id_identificacion', 'identificacion', 'cod_cliente') || cedula,
+    nombre: nombrePila || nombreCompleto,
+    apellido1: apellido1 || undefined,
+    apellido2: apellido2 || undefined,
+    correo: campoClienteCodisa(registro, 'correo', 'correo_electronico', 'correoElectronico', 'email', 'email1'),
     telefono: campoClienteCodisa(registro, 'telefono', 'telefono1', 'celular'),
     direccion: campoClienteCodisa(registro, 'direccion', 'direccion1'),
     // Se derivan de la longitud de la cédula consultada (ver
