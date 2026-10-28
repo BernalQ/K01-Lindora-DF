@@ -837,12 +837,27 @@ export async function buscarClienteCodisa(cedulaCruda: string): Promise<Resultad
     }
   }
 
-  const body: RespuestaClienteCodisa = await res.json().catch(() => ({ coderror: '1' }))
-  registrarLogCodisa('cliente', 'response', body)
+  const crudo = await res.json().catch(() => ({ coderror: '1' }) as unknown)
+  registrarLogCodisa('cliente', 'response', crudo)
 
-  if (body.coderror !== '0') {
-    const mensaje = `Codisa reportó un error al buscar el cliente (código ${body.coderror}).`
-    registrarLogCodisa('cliente', 'response', { error: mensaje, coderror: body.coderror })
+  // Igual que en `intentarEnviarPedidoWsDf` (?action=orden), Codisa puede
+  // envolver la respuesta en un arreglo de un solo elemento en vez de
+  // devolver el objeto plano documentado — confirmado en la práctica con un
+  // rechazo real por IP no autorizada: `[{"mensaje":"Acceso denegado la IP
+  // ..."}]`. Sin desenvolver el arreglo, `body.coderror`/`body.data` daban
+  // siempre `undefined` (un arreglo no tiene esas propiedades), así que
+  // CUALQUIER respuesta envuelta así caía en "Codisa reportó un error al
+  // buscar el cliente (código undefined)", perdiendo el motivo real que
+  // Codisa sí mandó (ej. el mensaje de IP denegada) — ver hallazgo real de
+  // soporte.
+  const body = (Array.isArray(crudo) ? crudo[0] : crudo) as RespuestaClienteCodisa | null
+
+  if (!body || body.coderror !== '0') {
+    const mensajeCodisa = typeof body?.mensaje === 'string' ? body.mensaje : typeof body?.error === 'string' ? body.error : undefined
+    const mensaje = mensajeCodisa
+      ? `Codisa reportó un error al buscar el cliente: ${mensajeCodisa}`
+      : `Codisa reportó un error al buscar el cliente (código ${body?.coderror}).`
+    registrarLogCodisa('cliente', 'response', { error: mensaje, coderror: body?.coderror })
     return { categoria: 'error-api', mensaje }
   }
 
