@@ -54,17 +54,6 @@ const SUGERENCIAS = PRODUCTS.filter(
 /** Tarifa de IVA en Costa Rica, usada sólo para desglosar subtotal/impuestos en el resumen de pago. */
 const IVA_RATE = 0.13
 
-/**
- * ⚠️ BYPASS TEMPORAL — SÓLO PARA HOY (revisión de envío a Codisa) ⚠️
- * Mientras el datáfono BAC está devolviendo "TO" (ver troubleshooting con
- * BAC Transaction Manager), este flag evita la llamada real a
- * `enviarTransaccionDatafono` y simula una transacción aprobada, para poder
- * seguir probando el flujo de envío de la orden a Codisa sin depender del
- * datáfono. DEBE volver a `false` (o eliminarse este bloque) antes de
- * procesar cobros reales de clientes.
- */
-const BYPASS_DATAFONO_TEMPORAL = true
-
 interface PaymentScreenProps {
   onBack: () => void
   /** Navega al flujo de identificación del cliente (cédula → registro) para la factura electrónica. */
@@ -212,21 +201,6 @@ export default function PaymentScreen({
     setEstado('procesando')
     setResultadoDatafono(null)
 
-    // ⚠️ BYPASS TEMPORAL — SÓLO PARA HOY (ver constante arriba): no se llama
-    // al datáfono real, se simula una aprobación para poder revisar el envío
-    // a Codisa sin depender de Transaction Manager.
-    if (BYPASS_DATAFONO_TEMPORAL) {
-      setResultadoDatafono({
-        categoria: 'aprobada',
-        mensaje: 'Transacción simulada (bypass temporal del datáfono — revisar envío a Codisa).',
-        permiteReintentar: false,
-        responseCode: '00',
-        authorizationNumber: 'BYPASS',
-        referenceNumber: invoice,
-      })
-      return
-    }
-
     const resultado = await enviarTransaccionDatafono({
       transactionType: 'SALE',
       terminalId: DATAFONO_CONFIG.terminalId,
@@ -361,7 +335,25 @@ export default function PaymentScreen({
       total: cartTotal(lines),
       fechaHora: new Date().toISOString(),
       tipoPago: tipoPago ?? undefined,
-      cliente: tipoPago === 'factura' && facturaResultado?.ok ? (cliente ?? undefined) : undefined,
+      // `cliente` (y por lo tanto `fe` en `construirPedidoWsDf`) ya NO
+      // depende de `facturaResultado?.ok`: ese resultado viene de
+      // `generarFactura()` -> print-bridge `/factura`, una operación LOCAL
+      // y separada (Excel de clientes, PDF/clave interna, correo) que nada
+      // tiene que ver con el envío real a Codisa (`enviarPedidoWsDf`, con su
+      // propia cola de pendientes/reintentos — ver `PanelCodisaOrdenes`).
+      // Antes, si ese paso local fallaba (ej. error de Excel/PDF/correo, o
+      // print-bridge momentáneamente caído), el pedido se enviaba a Codisa
+      // SIN los datos del cliente y con `fe: "0"` — perdiendo la factura
+      // electrónica real aunque el cliente sí la pidió y los datos se
+      // digitaron correctamente (hallazgo real de soporte: cliente
+      // registrado manualmente, datos ausentes en el JSON pendiente de
+      // Codisa). Ahora sólo depende de que el cliente haya elegido factura
+      // y de que `cliente` exista en el store.
+      cliente: tipoPago === 'factura' ? (cliente ?? undefined) : undefined,
+      // `claveFactura` SÍ depende de `facturaResultado?.ok`: es la clave de
+      // NUESTRA factura local (print-bridge), que literalmente no existe si
+      // esa llamada falló — a diferencia de `cliente`/`fe` arriba, no hay
+      // nada que "perder" aquí si no se tiene éxito.
       claveFactura: tipoPago === 'factura' && facturaResultado?.ok ? facturaResultado.clave : undefined,
       autorizacionDatafono: datosDatafonoAprobadoRef.current?.autorizacion,
       referenciaDatafono: datosDatafonoAprobadoRef.current?.referencia,

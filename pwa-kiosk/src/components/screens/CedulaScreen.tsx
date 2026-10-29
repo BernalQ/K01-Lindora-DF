@@ -61,11 +61,6 @@ export default function CedulaScreen({ onBack, onEncontrado, onNoEncontrado }: C
   const [buscando, setBuscando] = useState(false)
   const [estadoConsulta, setEstadoConsulta] = useState<EstadoConsulta>('idle')
   const [errorCedula, setErrorCedula] = useState<ErrorCedula | null>(null)
-  // Controla el teclado táctil propio (ver `VirtualKeyboard`) en vez de
-  // depender de que el teclado del sistema operativo del kiosko se
-  // despliegue solo — el input de cédula es `readOnly` (ver abajo), así que
-  // esto es la única forma de escribir en él.
-  const [tecladoAbierto, setTecladoAbierto] = useState(false)
 
   const puedeBuscar = cedula.trim().length > 0 && !buscando
 
@@ -188,107 +183,120 @@ export default function CedulaScreen({ onBack, onEncontrado, onNoEncontrado }: C
         <h1 className="text-xl font-semibold text-cream-50">{t('cedula.title')}</h1>
       </header>
 
-      <main className={`flex flex-1 flex-col items-center justify-center gap-5 p-6 text-center ${tecladoAbierto ? 'pb-80' : ''}`}>
-        <p className="max-w-sm text-lg text-wood-600">{t('cedula.subtitle')}</p>
+      {/*
+        Mismo layout de dos columnas que `RegistroClienteScreen` (ver su doc):
+        a la izquierda el dropdown de tipo de identificación y el campo de
+        cédula (readOnly, igual que ahí — ver comentario en
+        `VirtualKeyboard`), a la derecha el teclado táctil numérico SIEMPRE
+        visible (`variante="panel"`), en vez del teclado flotante que antes
+        tapaba la parte baja de la pantalla sólo mientras el campo tenía
+        foco. En pantallas angostas (`lg` hacia abajo) cae a una sola columna
+        apilada (teclado debajo), igual que en `RegistroClienteScreen`.
+      */}
+      <main className="flex-1 overflow-y-auto p-6 pb-32">
+        <p className="mb-6 text-wood-600">{t('cedula.subtitle')}</p>
 
-        <div className="w-full max-w-sm text-left">
-          <label htmlFor="tipoId" className="mb-2 block text-base font-bold text-wood-900">
-            {t('cedula.tipoIdLabel')}
-          </label>
-          <select
-            id="tipoId"
-            value={tipoId}
-            onChange={(e) => setTipoId(e.target.value as TipoIdentificacion)}
-            className="w-full rounded-xl border-2 border-wood-200 bg-white px-4 py-3 text-lg font-semibold text-wood-900 outline-none focus:border-brand-red"
-          >
-            <option value="fisica">{t('cedula.tipoIdFisica')}</option>
-            <option value="juridica">{t('cedula.tipoIdJuridica')}</option>
-          </select>
-        </div>
+        <div className="mx-auto flex max-w-5xl flex-col gap-8 lg:flex-row lg:items-start">
+          <div className="flex w-full flex-col gap-4 lg:max-w-xs">
+            <div>
+              <label htmlFor="tipoId" className="mb-1 block text-base font-bold text-wood-900">
+                {t('cedula.tipoIdLabel')}
+              </label>
+              <select
+                id="tipoId"
+                value={tipoId}
+                onChange={(e) => setTipoId(e.target.value as TipoIdentificacion)}
+                className="w-full rounded-xl border-2 border-wood-200 bg-white px-4 py-3 text-lg font-semibold text-wood-900 outline-none focus:border-brand-red"
+              >
+                <option value="fisica">{t('cedula.tipoIdFisica')}</option>
+                <option value="juridica">{t('cedula.tipoIdJuridica')}</option>
+              </select>
+            </div>
 
-        <div className="w-full max-w-sm text-left">
-          <label htmlFor="cedula" className="mb-2 block text-lg font-bold text-wood-900">
-            {t('cedula.label')}
-          </label>
-          {/*
-            `readOnly` a propósito (ver comentario en `VirtualKeyboard`): evita
-            que el teclado táctil del sistema operativo del kiosko aparezca y
-            compita con el teclado propio de abajo — toda la escritura pasa
-            por `onChange` del `VirtualKeyboard`, nunca por tipeo directo en
-            este input. Sigue recibiendo foco (`onFocus`) para abrirlo.
-          */}
-          <input
-            id="cedula"
-            type="text"
-            inputMode="none"
-            readOnly
-            autoFocus
-            value={cedula}
-            onFocus={() => setTecladoAbierto(true)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleBuscar()
-            }}
-            placeholder={placeholderCedula}
-            className="w-full rounded-xl border-2 border-wood-200 bg-white px-4 py-4 text-2xl font-bold text-wood-900 outline-none focus:border-brand-red"
-          />
-          <p className="mt-2 text-sm text-wood-500">{t('cedula.ayuda')}</p>
-        </div>
+            <div>
+              <label htmlFor="cedula" className="mb-1 block text-base font-bold text-wood-900">
+                {t('cedula.label')}
+              </label>
+              {/*
+                `readOnly` a propósito (ver comentario en `VirtualKeyboard`):
+                evita que el teclado táctil del sistema operativo del kiosko
+                aparezca y compita con el teclado propio de la derecha — toda
+                la escritura pasa por `onChange` del `VirtualKeyboard`.
+              */}
+              <input
+                id="cedula"
+                type="text"
+                inputMode="none"
+                readOnly
+                autoFocus
+                value={cedula}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleBuscar()
+                }}
+                placeholder={placeholderCedula}
+                className="w-full rounded-xl border-2 border-wood-200 bg-white px-4 py-3 text-lg font-bold text-wood-900 outline-none focus:border-brand-red"
+              />
+              <p className="mt-1 text-sm text-wood-500">{t('cedula.ayuda')}</p>
+            </div>
 
-        {estadoConsulta === 'consultando' && (
-          <p className="text-base font-semibold text-wood-600">{t('cedula.consultando')}</p>
-        )}
+            {estadoConsulta === 'consultando' && (
+              <p className="text-base font-semibold text-wood-600">{t('cedula.consultando')}</p>
+            )}
 
-        {estadoConsulta === 'encontrado' && (
-          <p className="flex items-center gap-2 text-base font-bold text-green-700">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-green-100 text-sm">✓</span>
-            {t('cedula.clienteEncontrado')}
-          </p>
-        )}
+            {estadoConsulta === 'encontrado' && (
+              <p className="flex items-center gap-2 text-base font-bold text-green-700">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-green-100 text-sm">✓</span>
+                {t('cedula.clienteEncontrado')}
+              </p>
+            )}
 
-        {estadoConsulta === 'no-encontrado' ? (
-          <div className="flex w-full max-w-sm flex-col items-center gap-3">
-            <p className="text-base font-semibold text-wood-700">{t('cedula.clienteNoEncontrado')}</p>
-            <button
-              type="button"
-              onClick={() => onNoEncontrado(cedula.trim())}
-              className="w-full rounded-2xl bg-brand-red py-5 text-xl font-bold text-white shadow-md shadow-brand-red/30 transition-all duration-100 active:scale-98 active:shadow-sm"
-            >
-              {t('cedula.digitarManualmente')}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setCedula('')
-                setEstadoConsulta('idle')
-              }}
-              className="w-full rounded-2xl bg-wood-100 py-3 text-base font-bold text-wood-800 transition-all duration-100 active:scale-98"
-            >
-              {t('cedula.buscarOtra')}
-            </button>
+            {estadoConsulta === 'no-encontrado' ? (
+              <div className="flex w-full flex-col gap-3">
+                <p className="text-base font-semibold text-wood-700">{t('cedula.clienteNoEncontrado')}</p>
+                <button
+                  type="button"
+                  onClick={() => onNoEncontrado(cedula.trim())}
+                  className="w-full rounded-2xl bg-brand-red py-5 text-xl font-bold text-white shadow-md shadow-brand-red/30 transition-all duration-100 active:scale-98 active:shadow-sm"
+                >
+                  {t('cedula.digitarManualmente')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCedula('')
+                    setEstadoConsulta('idle')
+                  }}
+                  className="w-full rounded-2xl bg-wood-100 py-3 text-base font-bold text-wood-800 transition-all duration-100 active:scale-98"
+                >
+                  {t('cedula.buscarOtra')}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleBuscar}
+                disabled={!puedeBuscar}
+                className={`w-full rounded-2xl py-5 text-xl font-bold transition-transform ${
+                  puedeBuscar ? 'bg-brand-red text-white active:scale-98' : 'bg-wood-200 text-wood-500'
+                }`}
+              >
+                {buscando ? t('cedula.buscando') : t('cedula.buscar')}
+              </button>
+            )}
           </div>
-        ) : (
-          <button
-            type="button"
-            onClick={handleBuscar}
-            disabled={!puedeBuscar}
-            className={`w-full max-w-sm rounded-2xl py-5 text-xl font-bold transition-transform ${
-              puedeBuscar ? 'bg-brand-red text-white active:scale-98' : 'bg-wood-200 text-wood-500'
-            }`}
-          >
-            {buscando ? t('cedula.buscando') : t('cedula.buscar')}
-          </button>
-        )}
-      </main>
 
-      {tecladoAbierto && (
-        <VirtualKeyboard
-          layout="numeric"
-          value={cedula}
-          onChange={handleCedulaChange}
-          onEnter={handleBuscar}
-          onClose={() => setTecladoAbierto(false)}
-        />
-      )}
+          {/* Columna derecha: teclado táctil numérico siempre visible, conectado al campo de cédula de la izquierda. */}
+          <div className="flex w-full justify-center lg:flex-1">
+            <VirtualKeyboard
+              variante="panel"
+              layout="numeric"
+              value={cedula}
+              onChange={handleCedulaChange}
+              onClose={handleBuscar}
+            />
+          </div>
+        </div>
+      </main>
 
       {errorCedula && (
         <CedulaErrorPopup

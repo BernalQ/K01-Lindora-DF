@@ -103,7 +103,12 @@ export default function WelcomeScreen({ onStart, onOpenAdmin }: WelcomeScreenPro
           centrado ni con el CTA principal — mismo nombre en ambos idiomas,
           por lo que no hace falta pasar por `t()`. */}
       <p className="absolute right-5 bottom-3 z-10 text-xs font-light tracking-wide text-cream-200/40 sm:right-7 sm:bottom-4 sm:text-sm">
-        Creado por ElevateConsultingCR
+        Creado por{' '}
+        {/* Mismo celeste ("--accent-light": #6B9FE4) que usa
+            elevateconsultingcr.com en la parte "Consulting" de su propio
+            logo — para que el nombre de la empresa se lea con su color de
+            marca real en vez del mismo gris apagado del resto del crédito. */}
+        <span className="text-[#6B9FE4]">ElevateConsultingCR</span>
       </p>
 
       {/* Copyright del negocio: esquina inferior izquierda, mismo estilo

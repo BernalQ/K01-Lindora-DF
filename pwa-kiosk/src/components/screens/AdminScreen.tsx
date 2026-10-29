@@ -194,16 +194,38 @@ function PinGate({ onDesbloqueado, onCancelar }: PinGateProps) {
 /* Menú principal del panel: elegir entre las 3 opciones disponibles.  */
 /* ------------------------------------------------------------------ */
 
+/** Cada cuánto se refresca el conteo de pendientes de AWS/Codisa mientras el menú de admin está en pantalla — basta con un valor modesto: sólo alimenta un indicador visual, no bloquea ningún envío real (esos corren en segundo plano con su propia cadencia, ver `awsVentas.ts`/`wsdf.ts`). */
+const INTERVALO_REFRESCO_PENDIENTES_MS = 10_000
+
 function MenuAdmin({ onSeleccionar }: { onSeleccionar: (vista: VistaAdmin) => void }) {
   const { t } = useLanguage()
-  const opciones: { vista: VistaAdmin; label: string }[] = [
+
+  // Conteo de pendientes por enviar, mostrado como insignia discreta en los
+  // botones de "AWS" y "Codisa" (ver requerimiento: que el operador sepa que
+  // faltan envíos sin tener que entrar al panel). Se refresca con un
+  // intervalo corto mientras este menú está montado para que, si un envío en
+  // segundo plano se resuelve (ej. el reintento automático de AWS), la
+  // insignia se actualice sola sin que el operador tenga que salir y volver
+  // a entrar al menú.
+  const [pendientesAws, setPendientesAws] = useState(() => obtenerResumenAwsVentas().pendientes.length)
+  const [pendientesCodisa, setPendientesCodisa] = useState(() => obtenerResumenCodisaOrdenes().pendientes.length)
+
+  useEffect(() => {
+    const intervalo = setInterval(() => {
+      setPendientesAws(obtenerResumenAwsVentas().pendientes.length)
+      setPendientesCodisa(obtenerResumenCodisaOrdenes().pendientes.length)
+    }, INTERVALO_REFRESCO_PENDIENTES_MS)
+    return () => clearInterval(intervalo)
+  }, [])
+
+  const opciones: { vista: VistaAdmin; label: string; pendientes?: number }[] = [
     { vista: 'precio', label: t('admin.menuCambiarPrecio') },
     { vista: 'agotado', label: t('admin.menuMarcarAgotado') },
     { vista: 'ordenes', label: t('admin.menuVerOrdenes') },
     { vista: 'cierre', label: t('admin.menuCierreCaja') },
     { vista: 'kiosko', label: t('admin.menuKiosko') },
-    { vista: 'awsVentas', label: t('admin.menuAwsVentas') },
-    { vista: 'codisaOrdenes', label: t('admin.menuCodisaOrdenes') },
+    { vista: 'awsVentas', label: t('admin.menuAwsVentas'), pendientes: pendientesAws },
+    { vista: 'codisaOrdenes', label: t('admin.menuCodisaOrdenes'), pendientes: pendientesCodisa },
   ]
 
   return (
@@ -213,9 +235,21 @@ function MenuAdmin({ onSeleccionar }: { onSeleccionar: (vista: VistaAdmin) => vo
           key={op.vista}
           type="button"
           onClick={() => onSeleccionar(op.vista)}
-          className="rounded-2xl bg-wood-900 px-6 py-6 text-left text-lg font-bold text-cream-50 shadow-md shadow-wood-900/10 transition-transform active:scale-98"
+          className="flex items-center justify-between gap-4 rounded-2xl bg-wood-900 px-6 py-6 text-left text-lg font-bold text-cream-50 shadow-md shadow-wood-900/10 transition-transform active:scale-98"
         >
-          {op.label}
+          <span>{op.label}</span>
+          {/*
+            Insignia minimalista: sólo aparece cuando hay algo pendiente (si
+            es 0 no se renderiza nada, para no ensuciar el botón en el caso
+            normal "todo sincronizado"). Mismo rojo de marca que el resto de
+            acentos de la app, en vez de un color de alerta nuevo — es sólo
+            un contador informativo, no un error.
+          */}
+          {!!op.pendientes && (
+            <span className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full bg-brand-red px-2 text-sm font-bold text-cream-50">
+              {op.pendientes}
+            </span>
+          )}
         </button>
       ))}
     </div>
