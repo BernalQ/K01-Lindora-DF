@@ -817,15 +817,24 @@ function mapearClienteCodisa(cedula: string, formato: FormatoCedula, registro: R
  *    pop-up de error (ver `ErrorCedula.permiteRegistroManual`).
  * 2. Error de red, tiempo agotado, o HTTP no-200 → `'error-conexion'` (el
  *    llamador debe ofrecer reintentar).
- * 3. `coderror !== "0"` → `'error-api'`: Codisa sí respondió pero reportó un
+ * 3. Si la respuesta trae la clave `cliente` (contrato de PRODUCCIÓN, ver
+ *    `RespuestaClienteCodisa` en `types/wsdf.ts`): objeto con datos →
+ *    `'encontrado'`; `null`/objeto vacío → `'no-encontrado'`. Se revisa
+ *    ANTES que `coderror` (punto 4) porque esta forma de respuesta no trae
+ *    `coderror` en absoluto — si se revisara después, cualquier búsqueda
+ *    exitosa por esta vía caería en `'error-api'` al no encontrar un
+ *    `coderror === "0"` (hallazgo real de soporte: justo este bug, contra el
+ *    host de producción, antes de agregarse este chequeo).
+ * 4. Si NO trae `cliente` (contrato original, host de pruebas):
+ *    `coderror !== "0"` → `'error-api'`: Codisa sí respondió pero reportó un
  *    error real de su lado (no es lo mismo que "no encontrado" — aquí NO se
  *    debe caer silenciosamente al formulario manual sin que el operador se
  *    entere de que algo falló del lado de Codisa).
- * 4. `coderror === "0"` pero `data` vacío/ausente → `'no-encontrado'`
+ * 5. `coderror === "0"` pero `data` vacío/ausente → `'no-encontrado'`
  *    (búsqueda exitosa, cliente genuinamente no existe — el llamador debe
  *    caer al respaldo local y, si tampoco, al formulario manual —
  *    `RegistroClienteScreen`).
- * 5. `coderror === "0"` + `data` no vacío → `'encontrado'` (se mapea al tipo
+ * 6. `coderror === "0"` + `data` no vacío → `'encontrado'` (se mapea al tipo
  *    `Cliente`).
  *
  * Cada request/response se registra en la bitácora (`registrarLogCodisa`).
@@ -894,6 +903,18 @@ export async function buscarClienteCodisa(cedulaCruda: string): Promise<Resultad
   // Codisa sí mandó (ej. el mensaje de IP denegada) — ver hallazgo real de
   // soporte.
   const body = (Array.isArray(crudo) ? crudo[0] : crudo) as RespuestaClienteCodisa | null
+
+  // Contrato de PRODUCCIÓN (confirmado contra `10.0.5.10`): el cliente
+  // encontrado viene directo en `body.cliente`, sin `coderror`/`data`. Se
+  // revisa ANTES del chequeo de `coderror` de abajo — ver punto 3 del
+  // comentario de la función.
+  if (body && 'cliente' in body) {
+    const registroCliente = body.cliente
+    if (registroCliente && typeof registroCliente === 'object' && Object.keys(registroCliente).length > 0) {
+      return { categoria: 'encontrado', cliente: mapearClienteCodisa(cedula, formato, registroCliente) }
+    }
+    return { categoria: 'no-encontrado' }
+  }
 
   if (!body || body.coderror !== '0') {
     const mensajeCodisa = typeof body?.mensaje === 'string' ? body.mensaje : typeof body?.error === 'string' ? body.error : undefined

@@ -81,17 +81,27 @@ export interface ValidacionWsDf {
 }
 
 /**
- * Cuerpo de respuesta de `?action=cliente` (búsqueda por cédula).
- * `coderror: "0"` + `data` no vacío significa cliente encontrado; cualquier
- * otro `coderror`, o `data` vacío/ausente, significa "no encontrado" (debe
- * mostrarse el formulario manual, ver `RegistroClienteScreen`). Las claves
- * exactas dentro de cada registro de `data[]` no están 100% documentadas por
- * Codisa, así que `buscarClienteCodisa` (en `services/wsdf.ts`) las lee de
- * forma defensiva, probando varios alias posibles por campo.
+ * Cuerpo de respuesta de `?action=cliente` (búsqueda por cédula). Codisa usa
+ * DOS contratos distintos según el ambiente/host (confirmado en la
+ * práctica, no por documentación — ver `buscarClienteCodisa` en
+ * `services/wsdf.ts`):
+ * 1. Contrato original (visto contra el host de pruebas `10.0.1.24`):
+ *    `coderror: "0"` + `data` no vacío = cliente encontrado; cualquier otro
+ *    `coderror`, o `data` vacío/ausente, = "no encontrado".
+ * 2. Contrato alterno (confirmado contra el host de PRODUCCIÓN `10.0.5.10`):
+ *    el cliente encontrado viene directo en la clave `cliente` (objeto
+ *    plano), sin `coderror`/`data` en absoluto.
+ * Las claves exactas dentro de cada registro (`data[]` o `cliente`) no
+ * están 100% documentadas por Codisa, así que `buscarClienteCodisa` las lee
+ * de forma defensiva, probando varios alias posibles por campo.
  */
 export interface RespuestaClienteCodisa {
-  coderror: string
+  coderror?: string
   data?: Array<Record<string, string>>
+  /** Forma alterna de respuesta exitosa del contrato de producción (ver comentario de arriba). */
+  cliente?: Record<string, string> | null
+  mensaje?: string
+  error?: string
   [clave: string]: unknown
 }
 
