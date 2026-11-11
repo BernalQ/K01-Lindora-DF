@@ -352,7 +352,11 @@ export function construirPedidoWsDf(venta: Venta): WsDfPayload {
       total_envio: null,
       total_neto: formatMontoCodisa(venta.total),
       observaciones: '',
-      no_autoriza: 0,
+      // Número de autorización del BAC (ver `Venta.autorizacionDatafono` en
+      // types/order.ts, capturado en `PaymentScreen.tsx` justo después de la
+      // transacción SALE aprobada) — vacío si por algún motivo no está
+      // disponible (ver `limpiarTexto` arriba).
+      no_autoriza: limpiarTexto(venta.autorizacionDatafono),
       no_cuenta: '',
       fe: conFactura ? '1' : '0',
       // Pedido siempre consumido en el kiosko (no hay reparto a domicilio en

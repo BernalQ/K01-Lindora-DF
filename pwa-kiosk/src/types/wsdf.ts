@@ -9,8 +9,8 @@ import type { Cliente } from './factura'
  *
  * NOTA: varios campos numéricos (cantidad, precio, total_neto, id_tienda,
  * id_cliente) se envían como STRING, no como number, siguiendo el formato
- * documentado por Codisa. `porc_desc`, `total_desc`, `no_autoriza` son las
- * excepciones numéricas.
+ * documentado por Codisa. `porc_desc`, `total_desc` son las excepciones
+ * numéricas.
  */
 
 /** Línea de detalle de un artículo dentro del pedido enviado a Codisa. */
@@ -53,8 +53,14 @@ export interface WsDfPedido {
   total_envio: number | null
   total_neto: string
   observaciones: string
-  /** Campo documentado por Codisa en el ejemplo de pedido; sin uso definido todavía en este kiosko, se envía en 0 por defecto. */
-  no_autoriza: number
+  /**
+   * Número de autorización devuelto por el Transaction Manager del BAC en la
+   * transacción SALE aprobada de esta venta (ver `Venta.autorizacionDatafono`
+   * en `types/order.ts`) — se envía como string (no todos los procesadores
+   * devuelven sólo dígitos) y vacío cuando no hay datáfono involucrado (ej.
+   * reintento desde una venta antigua sin ese dato capturado).
+   */
+  no_autoriza: string
   /** Campo documentado por Codisa en el ejemplo de pedido; sin uso definido todavía en este kiosko, se envía vacío por defecto. */
   no_cuenta: string
   /** "1" = venta con factura electrónica, "0" = venta simple (sin factura). */
