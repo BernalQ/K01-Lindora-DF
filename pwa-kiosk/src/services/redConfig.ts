@@ -1,15 +1,20 @@
+import { CAJA_ID } from './consecutivo'
+
 /**
  * Configuración de red fija del kiosko: IPs estáticas asignadas por el
  * equipo de redes para las 3 impresoras térmicas y para el gateway usado
  * como punto de salida hacia servicios externos.
  *
  * Impresoras: la PWA (navegador) no abre conexiones TCP directas a las
- * impresoras — eso lo hace el print-bridge (servicio Node local, ver
- * `print-bridge/src/printers/config.ts`, que usa estas mismas IPs como
- * valor por defecto). Se dejan documentadas también aquí para que la PWA
- * "reconozca" la configuración de red completa del kiosko en un solo lugar
- * y quede disponible por si algún flujo del frontend necesita mostrarlas o
- * referenciarlas (diagnóstico, etc.).
+ * impresoras — eso lo hace Backend-Print (servicio local puerto 3001, ver
+ * `services/backendPrint.ts`), al que la PWA le manda la IP ya resuelta
+ * desde aquí junto con el ticket armado.
+ *
+ * "Cliente" es la única de las 3 que es por-kiosko (cada máquina tiene su
+ * propia impresora de comprobante junto al cliente, ver
+ * `IP_IMPRESORA_CLIENTE_POR_CAJA` abajo); Carnicería y Parrilla son
+ * estaciones de cocina COMPARTIDAS entre K001 y K002, así que siguen con una
+ * sola IP para ambos kioskos.
  *
  * Gateway: pensado como host de salida para JSON hacia servicios externos.
  * Hoy en día su único uso real es el stub de `services/awsIot.ts` (AWS IoT
@@ -34,13 +39,29 @@
  * TODO: mismo ajuste pendiente para `CAJA_ID` en `services/consecutivo.ts`
  * (`WSDF_CONFIG.idTienda` en `wsdf.ts` ya quedó resuelto igual que esto).
  */
+
+/**
+ * IP de la impresora de comprobante "Cliente" de cada kiosko, por `CAJA_ID`
+ * — hardcodeada a propósito (mismo criterio que `IP_KIOSKOS` en
+ * `services/kioskoSyncConfig.ts` y `TERMINAL_ID_POR_CAJA` en
+ * `services/datafono.ts`): "Cliente K001" (10.0.5.247) y "Cliente K002"
+ * (10.0.5.246) son impresoras físicas distintas, una junto a cada máquina.
+ * `VITE_IP_IMPRESORA_CLIENTE` sigue soportada como override puntual de
+ * emergencia y, si está definida, tiene prioridad absoluta sobre esta tabla.
+ */
+const IP_IMPRESORA_CLIENTE_POR_CAJA: Record<string, string> = {
+  K001: '10.0.5.247',
+  K002: '10.0.5.246',
+}
+
 export const RED_CONFIG = {
   impresoras: {
-    /** impresora_cliente */
-    cliente: import.meta.env.VITE_IP_IMPRESORA_CLIENTE || '10.0.5.247',
-    /** impresora_carniceria */
+    /** impresora_cliente ("Cliente K001"/"Cliente K002" según el kiosko, ver IP_IMPRESORA_CLIENTE_POR_CAJA arriba) */
+    cliente:
+      import.meta.env.VITE_IP_IMPRESORA_CLIENTE || IP_IMPRESORA_CLIENTE_POR_CAJA[CAJA_ID] || '10.0.5.247',
+    /** impresora_carniceria (compartida entre K001 y K002) */
     carniceria: import.meta.env.VITE_IP_IMPRESORA_CARNICERIA || '10.0.5.248',
-    /** impresora_parrilla (id interno `restaurante`, ver NOMBRES_IMPRESORA en tickets.ts) */
+    /** impresora_parrilla (id interno `restaurante`, ver NOMBRES_IMPRESORA en tickets.ts; compartida entre K001 y K002) */
     parrilla: import.meta.env.VITE_IP_IMPRESORA_PARRILLA || '10.0.5.249',
   },
   /** Máscara de subred de las 3 impresoras (10.0.5.0/24). Sólo informativo. */

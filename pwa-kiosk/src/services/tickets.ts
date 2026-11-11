@@ -7,16 +7,23 @@ import type { ResultadoDatafono } from '../types/datafono'
 export type PrinterId = 'carniceria' | 'restaurante' | 'cliente'
 
 /**
- * Nombres de impresora en español (fijos), usados como título de sección en
- * los popups de tickets. El identificador interno (`PrinterId`, la clave de
- * este objeto) sigue siendo `'restaurante'` para no romper la integración
- * con el print-bridge/hardware existente; sólo cambia el nombre visible,
- * que ahora es "Parrilla" (antes "Restaurante").
+ * Nombres de impresora en español, usados como título de sección en los
+ * popups de tickets. El identificador interno (`PrinterId`, la clave de este
+ * objeto) sigue siendo `'restaurante'` para no romper la integración con el
+ * print-bridge/hardware existente; sólo cambia el nombre visible, que ahora
+ * es "Parrilla" (antes "Restaurante"). Carnicería y Parrilla son estaciones
+ * compartidas entre kioskos, así que su nombre es fijo.
+ *
+ * "Cliente" en cambio incluye el `CAJA_ID` ("Cliente K001"/"Cliente K002")
+ * porque cada kiosko tiene su propia impresora de comprobante física (ver
+ * `IP_IMPRESORA_CLIENTE_POR_CAJA` en `services/redConfig.ts`) — así el
+ * operador/admin de cada máquina ve claramente a cuál impresora se refiere
+ * un error de impresión, sin confundirla con la del otro kiosko.
  */
 export const NOMBRES_IMPRESORA: Record<PrinterId, string> = {
   carniceria: 'Carnicería',
   restaurante: 'Parrilla',
-  cliente: 'Cliente',
+  cliente: `Cliente ${CAJA_ID}`,
 }
 
 /**
