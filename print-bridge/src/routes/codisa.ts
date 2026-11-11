@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { Agent, fetch as undiciFetch } from 'undici'
+import { fetch as undiciFetch } from 'undici'
 
 /**
  * Proxy server-to-server hacia el API `df_api.php` de Codisa (factura
@@ -7,13 +7,13 @@ import { Agent, fetch as undiciFetch } from 'undici'
  * PWA (`services/wsdf.ts` -> `WSDF_CONFIG.endpointCliente`/`endpointOrden`).
  *
  * Por qué existe: el navegador del kiosko (origen `http://localhost:3000`)
- * no puede llamar directo a `https://10.0.1.24/kiosko/df_api.php` porque el
- * servidor de Codisa no responde correctamente al preflight CORS (`OPTIONS`)
- * que todo navegador manda antes de un POST con `Content-Type:
- * application/json` entre orígenes distintos — Codisa le devuelve 400 Bad
- * Request a ese preflight, y el navegador nunca llega a mandar el POST real
- * (aunque el mismo JSON, probado con Postman, sí funciona — Postman no
- * aplica CORS, por eso "funciona ahí" y no desde el navegador).
+ * no puede llamar directo a `CODISA_HOST` porque el servidor de Codisa no
+ * responde correctamente al preflight CORS (`OPTIONS`) que todo navegador
+ * manda antes de un POST con `Content-Type: application/json` entre
+ * orígenes distintos — Codisa le devuelve 400 Bad Request a ese preflight,
+ * y el navegador nunca llega a mandar el POST real (aunque el mismo JSON,
+ * probado con Postman, sí funciona — Postman no aplica CORS, por eso
+ * "funciona ahí" y no desde el navegador).
  *
  * CORS es una restricción exclusiva de JavaScript corriendo en un navegador;
  * una petición HTTP hecha por este servicio Node (server a servidor, sin
@@ -29,8 +29,14 @@ import { Agent, fetch as undiciFetch } from 'undici'
  * comentario de archivo ahí) — no se agregó variable de `.env` nueva porque
  * sería el mismo valor duplicado en dos `.env` distintos sin necesidad real
  * de configurarlo por ambiente.
+ *
+ * URL de PRODUCCIÓN (IP interna nueva, reemplaza la anterior `10.0.1.24`
+ * usada en pruebas) — a diferencia de esa, esta es `http://` plano, sin
+ * TLS, así que ya NO aplica el workaround de certificado vencido que tenía
+ * este archivo antes (ver historial de git si hace falta recuperarlo para
+ * algún ambiente que vuelva a ser HTTPS).
  */
-const CODISA_HOST = 'https://10.0.1.24/kiosko/df_api.php'
+const CODISA_HOST = 'http://10.0.5.10/kiosko/df_api.php'
 
 /**
  * Tiempo máximo de espera a Codisa antes de abortar. Deliberadamente MENOR
@@ -42,25 +48,6 @@ const CODISA_HOST = 'https://10.0.1.24/kiosko/df_api.php'
  * del error real a favor de un simple "se agotó el tiempo de espera".
  */
 const TIMEOUT_MS = 15000
-
-/**
- * Codisa expone `df_api.php` por HTTPS sobre una IP interna con un
- * certificado VENCIDO (confirmado con `curl -k` desde el kiosko: sin `-k`
- * Node rechaza la conexión con `CERT_HAS_EXPIRED` — ver hallazgo de
- * auditoría). El `fetch` global de Node (basado en `undici`) valida
- * certificados por defecto y, a diferencia de curl, no distingue el motivo
- * en el error que propaga (`fetch failed` genérico, sin detalle) — así que
- * la petición nunca llegaba a recibir la respuesta real de Codisa.
- *
- * Este `Agent` desactiva esa validación (`rejectUnauthorized: false`) SÓLO
- * para esta llamada puntual a Codisa (no se toca el `fetch` global de Node
- * ni el resto de este servicio) — mismo riesgo que ya se acepta hoy al
- * correr `curl -k` manualmente contra esta misma IP, simplemente aplicado
- * también a las peticiones automáticas del proxy. Esto es un parche del
- * lado nuestro para poder seguir operando; lo correcto sigue siendo que
- * Codisa renueve ese certificado — vale la pena avisarles.
- */
-const agenteSinValidarCertificado = new Agent({ connect: { rejectUnauthorized: false } })
 
 export const codisaRouter = Router()
 
@@ -80,7 +67,6 @@ async function reenviarACodisa(accion: 'orden' | 'cliente', body: unknown): Prom
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: controller.signal,
-      dispatcher: agenteSinValidarCertificado,
     })
     const json = await res.json().catch(() => null)
     return { status: res.status, json }

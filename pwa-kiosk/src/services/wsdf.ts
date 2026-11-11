@@ -16,8 +16,9 @@ import type {
  * Configuración e integración real con el API `df_api.php` de Codisa —
  * factura electrónica (búsqueda de cliente por cédula + envío de pedido).
  *
- * Host real de Codisa: `10.0.1.24`, puerto 443 (https) — pero `endpointCliente`/
- * `endpointOrden` de abajo NO apuntan ahí directo. Apuntan al `print-bridge`
+ * Host real de Codisa (producción): `10.0.5.10`, puerto 80 (http, ver
+ * `CODISA_HOST` en `print-bridge/src/routes/codisa.ts`) — pero
+ * `endpointCliente`/`endpointOrden` de abajo NO apuntan ahí directo. Apuntan al `print-bridge`
  * local (`http://localhost:4000`, ver `BRIDGE_URL` en `services/facturacion.ts`,
  * mismo servicio), que hace de proxy server-to-server hacia Codisa (ver
  * `print-bridge/src/routes/codisa.ts`).
