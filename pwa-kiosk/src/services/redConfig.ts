@@ -11,11 +11,13 @@
  * y quede disponible por si algún flujo del frontend necesita mostrarlas o
  * referenciarlas (diagnóstico, etc.).
  *
- * Gateway: sí se usa directamente desde la PWA, como host de los envíos de
- * JSON hacia servicios externos (ver `WSDF_CONFIG.endpoint` en `wsdf.ts`
- * para Codisa, `services/awsIot.ts` para AWS IoT Core, y
- * `DATAFONO_CONFIG.endpoint` en `services/datafono.ts` para el datáfono BAC
- * -- Transaction Manager -- puerto 2493).
+ * Gateway: pensado como host de salida para JSON hacia servicios externos.
+ * Hoy en día su único uso real es el stub de `services/awsIot.ts` (AWS IoT
+ * Core, todavía no implementado). NO lo usa el datáfono BAC (Transaction
+ * Manager corre local en cada máquina, ver `ipPropiaKiosko()` en
+ * `services/kioskoSyncConfig.ts` y `DATAFONO_CONFIG.endpoint` en
+ * `services/datafono.ts`) ni Codisa (`WSDF_CONFIG` en `wsdf.ts` apunta al
+ * print-bridge local, `http://localhost:4000/...`).
  *
  * Subred: 10.0.5.0/24 (máscara 255.255.255.0) — informativo, no lo usa
  * ningún código: ni el `fetch` del navegador ni el `connect()` TCP del

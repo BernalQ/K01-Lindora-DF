@@ -427,9 +427,15 @@ export default function PaymentScreen({
       enviarTicket('cliente', tickets.cliente)
         .then(setImpresionCliente)
         .catch((err) => console.error('[PaymentScreen] Error inesperado enviando ticket de cliente:', err))
-      enviarTicket('carniceria', tickets.carniceria)
-        .then(setImpresionCarniceria)
-        .catch((err) => console.error('[PaymentScreen] Error inesperado enviando ticket de carnicería:', err))
+      // Si la venta no tiene ningún item que le toque a carnicería (ej. sólo
+      // "Chicharrón de Panzada"), `ticketCarniceria` ya devuelve `[]` — no
+      // hay que mandarlo a imprimir (antes esto salía como una comanda en
+      // blanco, sólo encabezado y corte de papel, ver bug reportado).
+      if (tickets.carniceria.length > 0) {
+        enviarTicket('carniceria', tickets.carniceria)
+          .then(setImpresionCarniceria)
+          .catch((err) => console.error('[PaymentScreen] Error inesperado enviando ticket de carnicería:', err))
+      }
       enviarTicket('restaurante', tickets.restaurante)
         .then(setImpresionRestaurante)
         .catch((err) => console.error('[PaymentScreen] Error inesperado enviando ticket de restaurante:', err))
@@ -473,6 +479,11 @@ export default function PaymentScreen({
       setImpresionCliente(null)
       enviarTicket('cliente', ticketsGenerados.cliente).then(setImpresionCliente)
     } else if (printer === 'carniceria') {
+      // Defensivo: en la práctica el botón "Reintentar" de carnicería nunca
+      // debería aparecer si no se le envió nada (ver banner más abajo, que
+      // filtra por `resultado` truthy), pero se guarda igual por si se
+      // llama a este handler desde otro lado en el futuro.
+      if (ticketsGenerados.carniceria.length === 0) return
       setImpresionCarniceria(null)
       enviarTicket('carniceria', ticketsGenerados.carniceria).then(setImpresionCarniceria)
     } else {
@@ -497,8 +508,14 @@ export default function PaymentScreen({
   const intentarImprimirCierre = async (): Promise<boolean> => {
     const carniceria = ticketConsolidadoCarniceria(mesaId, ordenesMesa)
     const restaurante = ticketConsolidadoRestaurante(mesaId, ordenesMesa)
+    // Si ninguna orden de la mesa tuvo items para carnicería,
+    // `ticketConsolidadoCarniceria` ya devuelve `[]` — no se manda nada a
+    // imprimir (mismo bug que en `ticketCarniceria`, ver comentario ahí) y
+    // se trata como éxito sin red de por medio, para no bloquear el cierre.
     const [resultadoCarniceria, resultadoRestaurante] = await Promise.all([
-      enviarTicket('carniceria', carniceria),
+      carniceria.length > 0
+        ? enviarTicket('carniceria', carniceria)
+        : Promise.resolve<ResultadoImpresion>({ printer: 'carniceria', ok: true, simulado: false }),
       enviarTicket('restaurante', restaurante),
     ])
 

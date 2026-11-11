@@ -43,3 +43,19 @@ export function ipOtroKiosko(): string {
   const otraCaja = Object.keys(IP_KIOSKOS).find((caja) => caja !== CAJA_ID)
   return otraCaja ? IP_KIOSKOS[otraCaja] : ''
 }
+
+/**
+ * IP de la máquina de ESTE kiosko (hardcodeada, ver `IP_KIOSKOS` arriba),
+ * según `CAJA_ID`. Además de usarse para que el OTRO kiosko nos encuentre
+ * (ver `ipOtroKiosko`), este mismo valor es el punto de salida correcto para
+ * cualquier servicio que corra LOCAL a cada máquina física (ej. Transaction
+ * Manager del datáfono BAC, ver `DATAFONO_CONFIG.endpoint` en
+ * `services/datafono.ts`): K001 y K002 tienen cada uno su propio pinpad
+ * conectado a su propia máquina, así que NO comparten el mismo Transaction
+ * Manager — usar la IP fija de `RED_CONFIG.ipGateway` para esto sería
+ * incorrecto en K002 (apuntaría al Transaction Manager de K001). Devuelve
+ * `''` si `CAJA_ID` no está en la tabla (kiosko desconocido).
+ */
+export function ipPropiaKiosko(): string {
+  return IP_KIOSKOS[CAJA_ID] ?? ''
+}

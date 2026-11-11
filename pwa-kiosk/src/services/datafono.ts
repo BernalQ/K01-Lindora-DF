@@ -1,4 +1,6 @@
 import { RED_CONFIG } from './redConfig'
+import { CAJA_ID } from './consecutivo'
+import { ipPropiaKiosko } from './kioskoSyncConfig'
 import { registrarLogDatafono } from './datafonoLogs'
 import type {
   CategoriaResultadoDatafono,
@@ -12,28 +14,57 @@ import type {
  * con tarjeta — reemplaza la simulación con `setTimeout` que antes tenía
  * `PaymentScreen.handleCobrar`.
  *
- * Transaction Manager corre en el mismo gateway de red del kiosko
- * (`RED_CONFIG.ipGateway`, ver `services/redConfig.ts`), puerto 2493, y
- * expone un único endpoint HTTP (sin ruta) que recibe un POST con el JSON de
+ * Transaction Manager corre LOCAL en la máquina de CADA kiosko (co-ubicado
+ * con su propio pinpad físico, mismo criterio que el `terminalId` de abajo):
+ * K001 y K002 NO comparten un Transaction Manager — cada uno sólo puede
+ * cobrar con SU PROPIO pinpad. Por eso el endpoint usa la IP propia del
+ * kiosko (`ipPropiaKiosko()`, ver `services/kioskoSyncConfig.ts`, misma tabla
+ * hardcodeada por `CAJA_ID` que ya usan las IPs de sincronización entre
+ * kioskos) y NO el gateway de red compartido (`RED_CONFIG.ipGateway`, que
+ * hoy día coincide numéricamente con la IP de K001 sólo por ser ese el único
+ * kiosko que existía cuando se fijó ese valor por defecto — ver hallazgo de
+ * auditoría: antes de este cambio, K002 habría intentado cobrar contra el
+ * Transaction Manager de K001). Se mantiene `RED_CONFIG.ipGateway` como
+ * último respaldo sólo por si `CAJA_ID` fuera un valor desconocido.
+ * Expone un único endpoint HTTP (sin ruta) que recibe un POST con el JSON de
  * la transacción (ver `TransaccionDatafono` en `types/datafono.ts`) y
  * responde con el resultado de esa misma operación — no hay polling ni
  * webhook, la respuesta del POST ya es el resultado final.
  *
- * Importante — ES PLANO (http), no https: a diferencia de `WSDF_CONFIG`
- * (Codisa, sí usa https sobre el mismo gateway, ver `services/wsdf.ts`),
- * Transaction Manager expone un socket HTTP plano local en la red interna
- * del kiosko; no hay certificado involucrado.
+ * Importante — ES PLANO (http), no https: Transaction Manager expone un
+ * socket HTTP plano local en la red interna del kiosko; no hay certificado
+ * involucrado.
  */
+/**
+ * ID del terminal físico del datáfono BAC conectado a cada kiosko, uno
+ * distinto por `CAJA_ID` — a diferencia de las IPs de impresoras (que sí
+ * vienen de `.env`, ver `redConfig.ts`), este valor no es un secreto, sólo
+ * identifica qué pinpad está físicamente conectado a cada máquina, así que
+ * se hardcodea directo por `CAJA_ID`, mismo criterio que las IPs de
+ * sincronización entre kioskos (`IP_KIOSKOS` en `services/kioskoSyncConfig.ts`):
+ * con el `CAJA_ID` elegido a mano desde Admin -> Kiosko, cada terminal usa
+ * automáticamente el ID de SU propio pinpad sin que el operador tenga que
+ * configurar nada adicional por máquina.
+ */
+const TERMINAL_ID_POR_CAJA: Record<string, string> = {
+  K001: 'DNFNOCN1',
+  K002: 'DNFNOCN2',
+}
+
 export const DATAFONO_CONFIG = {
   /**
-   * ID fijo del terminal físico conectado a este kiosko (único terminal por
-   * ahora). Configurable vía `VITE_DATAFONO_TERMINAL_ID` (ver `.env.example`
-   * y `services/redConfig.ts` para el mismo patrón aplicado a las IPs) para
-   * desplegar el mismo build en un kiosko con otro terminal sin recompilar
-   * con un valor distinto hardcodeado.
+   * Resuelve el `terminalId` de ESTE kiosko a partir de `CAJA_ID` (ver tabla
+   * `TERMINAL_ID_POR_CAJA` arriba). `VITE_DATAFONO_TERMINAL_ID` sigue
+   * soportado como override puntual de emergencia (ej. probar con otro
+   * terminal físico sin tocar código ni la tabla) y, si está definida, tiene
+   * prioridad absoluta sobre la tabla.
    */
-  terminalId: import.meta.env.VITE_DATAFONO_TERMINAL_ID || 'EMVUFID1',
-  endpoint: `http://${RED_CONFIG.ipGateway}:2493`,
+  terminalId: import.meta.env.VITE_DATAFONO_TERMINAL_ID || TERMINAL_ID_POR_CAJA[CAJA_ID] || 'EMVUFID1',
+  /**
+   * IP propia del kiosko (ver comentario arriba) — no la del gateway
+   * compartido. `RED_CONFIG.ipGateway` sólo se usa acá como último respaldo.
+   */
+  endpoint: `http://${ipPropiaKiosko() || RED_CONFIG.ipGateway}:2493`,
 }
 
 /**

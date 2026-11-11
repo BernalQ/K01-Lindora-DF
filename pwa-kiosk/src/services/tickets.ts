@@ -392,6 +392,17 @@ function lineasCarniceria(items: OrderItem[]): TicketLine[] {
 }
 
 export function ticketCarniceria(venta: Venta): TicketLine[] {
+  // Si ningún item de la venta le toca a carnicería (ej. una orden de sólo
+  // "Chicharrón de Panzada" — ver `nombreCarniceria`), `lineasCarniceria`
+  // devuelve un arreglo vacío; antes esto no se revisaba y el ticket se
+  // armaba igual con encabezado + separador pero sin ningún producto en
+  // medio, así que Backend-Print terminaba imprimiendo/cortando una comanda
+  // "en blanco" para la estación de carnicería (ver bug reportado). Ahora se
+  // devuelve `[]` directamente (nada que imprimir) y es responsabilidad del
+  // llamador (`PaymentScreen.tsx`) no invocar `enviarTicket` cuando el
+  // ticket viene vacío.
+  const lineas = lineasCarniceria(venta.items)
+  if (lineas.length === 0) return []
   return [
     // 4 renglones en blanco totalmente en la parte superior del tiquete,
     // antes del header (ver requerimiento vigente: "deben estar totalmente
@@ -411,7 +422,7 @@ export function ticketCarniceria(venta: Venta): TicketLine[] {
     '*** CARNICERIA ***',
     ...encabezado(venta),
     FIN_ENCABEZADO,
-    ...lineasCarniceria(venta.items),
+    ...lineas,
     SEPARADOR,
   ]
 }
@@ -547,6 +558,11 @@ export function ticketRestaurante(venta: Venta): TicketLine[] {
  */
 export function ticketConsolidadoCarniceria(mesaId: string, ordenes: Venta[]): TicketLine[] {
   const items = ordenes.flatMap((v) => v.items)
+  // Mismo criterio que `ticketCarniceria`: si ninguna de las órdenes de la
+  // mesa tiene items que le toquen a carnicería, no hay nada que imprimir
+  // (ver comentario ahí con el detalle del bug que esto evita).
+  const lineas = lineasCarniceria(items)
+  if (lineas.length === 0) return []
   return [
     // 4 renglones en blanco totalmente en la parte superior del tiquete,
     // antes del header (mismo criterio que `ticketCarniceria`, ver
@@ -561,7 +577,7 @@ export function ticketConsolidadoCarniceria(mesaId: string, ordenes: Venta[]): T
     formatFechaHoraAmPm(new Date()),
     '',
     FIN_ENCABEZADO,
-    ...lineasCarniceria(items),
+    ...lineas,
     SEPARADOR,
   ]
 }

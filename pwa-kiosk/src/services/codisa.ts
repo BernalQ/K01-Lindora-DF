@@ -9,9 +9,9 @@ import type { Venta } from '../types/order'
  * integración y pueda conectarse después sin rediseñar nada.
  *
  * El envío de JSON hacia Codisa que sí tiene contrato documentado es el API
- * WS DF (ver `WSDF_CONFIG`/`enviarPedidoWsDf` en `services/wsdf.ts`), que ya
- * usa el gateway de red fijo del kiosko (`RED_CONFIG.ipGateway`, ver
- * `services/redConfig.ts`) como punto de salida.
+ * WS DF (ver `WSDF_CONFIG`/`enviarPedidoWsDf` en `services/wsdf.ts`), que
+ * sale a través del print-bridge local (`http://localhost:4000/...`), no del
+ * gateway de red del kiosko.
  */
 export async function enviarVentaACodisa(venta: Venta): Promise<{ ok: boolean }> {
   console.log('[codisa:stub] Venta registrada localmente, envío a Codisa pendiente de API:', venta)
