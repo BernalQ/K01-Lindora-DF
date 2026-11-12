@@ -38,7 +38,7 @@ interface AdminScreenProps {
 }
 
 /** Clave numérica válida para entrar al panel de administración (ver requerimiento del kiosko). */
-const PIN_VALIDO = '123456'
+const PIN_VALIDO = '260287'
 const LARGO_PIN = 6
 
 type VistaAdmin = 'menu' | 'precio' | 'agotado' | 'ordenes' | 'cierre' | 'kiosko' | 'awsVentas' | 'codisaOrdenes'
