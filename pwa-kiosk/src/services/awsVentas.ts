@@ -268,3 +268,18 @@ export function obtenerResumenAwsVentas(): ResumenAwsVentas {
     .sort((a, b) => b.proximoIntentoEn.localeCompare(a.proximoIntentoEn))
   return { enviados, pendientes }
 }
+
+/**
+ * Botón "Limpiar pendientes" manual desde Admin (`PanelAwsVentas`): vacía por
+ * completo la cola de reintentos (`CLAVE_PENDIENTES`), SIN intentar reenviar
+ * nada antes. A diferencia de Codisa (ver `limpiarCodisaPendientes` en
+ * `wsdf.ts`), esta cola es sólo una copia secundaria/no fiscal de la venta
+ * (el dato fiscal real vive en la cola de Codisa), así que perderla no deja
+ * ninguna venta sin facturar — es seguro limpiarla sin pedir reenvío previo.
+ * No toca `CLAVE_ENVIADOS` (historial de éxitos, no es una cola "pendiente").
+ * El llamador (UI) es responsable de confirmar con el operador antes de
+ * invocar esto, igual que el resto de acciones destructivas de Admin.
+ */
+export function limpiarAwsPendientes(): void {
+  guardarJson(CLAVE_PENDIENTES, {})
+}

@@ -20,8 +20,38 @@ export default function ProductCard({ product, onPersonalizar }: ProductCardProp
     (product.opcionUnica && product.opcionUnica.length > 0) ||
     (product.extras && product.extras.length > 0)
 
+  /** Acción por defecto de la tarjeta completa: la misma que dispara el
+   * botón "Agregar"/"Personalizar" de abajo. Se dispara al tocar
+   * cualquier parte del cuadro (imagen, nombre, precio, espacio vacío),
+   * no sólo el botón — pedido explícito para que el área táctil sea toda
+   * la tarjeta y no sólo el botón angosto del fondo. Los botones internos
+   * frenan la propagación (`stopPropagation`) para no duplicar la acción
+   * cuando el toque cae directamente sobre ellos. */
+  const handleCardClick = () => {
+    if (product.agotado) return
+    if (esPersonalizable) {
+      onPersonalizar(product)
+    } else {
+      addSimpleItem(product, language)
+    }
+  }
+
   return (
-    <div className="relative flex flex-col overflow-hidden rounded-2xl bg-white shadow-md shadow-wood-900/10">
+    <div
+      role="button"
+      tabIndex={product.agotado ? -1 : 0}
+      onClick={handleCardClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          handleCardClick()
+        }
+      }}
+      aria-disabled={product.agotado}
+      className={`relative flex flex-col overflow-hidden rounded-2xl bg-white shadow-md shadow-wood-900/10 transition-transform ${
+        product.agotado ? 'cursor-not-allowed' : 'cursor-pointer active:scale-[0.98]'
+      }`}
+    >
       {/* Insignia "Agotado": producto marcado desde el panel de
           administración (ver AdminScreen). El producto sigue visible en el
           menú (no se oculta), pero no puede agregarse al pedido. */}
@@ -58,7 +88,13 @@ export default function ProductCard({ product, onPersonalizar }: ProductCardProp
           {esPersonalizable ? (
             <button
               type="button"
-              onClick={() => onPersonalizar(product)}
+              onClick={(e) => {
+                // Frena la propagación: sin esto, el click burbujea hasta el
+                // `div` raíz (ver `handleCardClick` arriba) y dispararía la
+                // acción dos veces cuando el toque cae sobre este botón.
+                e.stopPropagation()
+                onPersonalizar(product)
+              }}
               disabled={product.agotado}
               className="w-full rounded-xl bg-wood-900 py-2 text-sm font-semibold text-cream-50 transition-transform active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100"
             >
@@ -70,7 +106,12 @@ export default function ProductCard({ product, onPersonalizar }: ProductCardProp
             // pedido), donde vive el control de cantidad de esa línea.
             <button
               type="button"
-              onClick={() => addSimpleItem(product, language)}
+              onClick={(e) => {
+                // Mismo motivo que arriba: evitar duplicar `addSimpleItem`
+                // por la burbuja del evento hacia el `div` raíz.
+                e.stopPropagation()
+                addSimpleItem(product, language)
+              }}
               disabled={product.agotado}
               className="w-full rounded-xl bg-brand-red py-2 text-sm font-semibold text-white transition-transform active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100"
             >

@@ -15,10 +15,16 @@ import { DATAFONO_CONFIG, enviarTransaccionDatafono } from '../../services/dataf
 import { CAJA_ID, STORAGE_KEY_CAJA_ID } from '../../services/consecutivo'
 import { verificarConexionRemota } from '../../services/kioskoTransport'
 import { useSyncStatusStore } from '../../store/syncStatusStore'
-import { obtenerResumenAwsVentas, reenviarVentaAwsManual, type EnvioAwsPendiente } from '../../services/awsVentas'
+import {
+  obtenerResumenAwsVentas,
+  reenviarVentaAwsManual,
+  limpiarAwsPendientes,
+  type EnvioAwsPendiente,
+} from '../../services/awsVentas'
 import {
   obtenerResumenCodisaOrdenes,
   reenviarOrdenCodisaManual,
+  limpiarCodisaPendientes,
   type EnvioCodisaPendiente,
 } from '../../services/wsdf'
 import type { Product } from '../../types/catalog'
@@ -1133,6 +1139,12 @@ function PanelAwsVentas() {
   const { t } = useLanguage()
   const [resumen, setResumen] = useState(() => obtenerResumenAwsVentas())
   const [reenviando, setReenviando] = useState<string | null>(null)
+  // Confirmación antes de vaciar la cola de pendientes (ver
+  // `limpiarAwsPendientes` en `services/awsVentas.ts`): mismo patrón que
+  // `mostrarConfirmacion` del cierre de caja más arriba en este archivo —
+  // un simple booleano alcanza porque la acción no depende de "cuál" item,
+  // sino de la cola completa.
+  const [confirmarLimpiar, setConfirmarLimpiar] = useState(false)
 
   const refrescar = () => setResumen(obtenerResumenAwsVentas())
 
@@ -1146,17 +1158,34 @@ function PanelAwsVentas() {
     }
   }
 
+  const limpiarPendientes = () => {
+    limpiarAwsPendientes()
+    setConfirmarLimpiar(false)
+    refrescar()
+  }
+
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-8">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-wood-900">{t('admin.awsVentasTitle')}</h2>
-        <button
-          type="button"
-          onClick={refrescar}
-          className="rounded-full bg-wood-100 px-4 py-2 text-sm font-semibold text-wood-700 transition-transform active:scale-95"
-        >
-          {t('admin.awsVentasRefrescar')}
-        </button>
+        <div className="flex items-center gap-2">
+          {resumen.pendientes.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setConfirmarLimpiar(true)}
+              className="rounded-full bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition-transform active:scale-95"
+            >
+              {t('admin.awsVentasLimpiar')}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={refrescar}
+            className="rounded-full bg-wood-100 px-4 py-2 text-sm font-semibold text-wood-700 transition-transform active:scale-95"
+          >
+            {t('admin.awsVentasRefrescar')}
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-3">
@@ -1218,6 +1247,33 @@ function PanelAwsVentas() {
           </div>
         )}
       </div>
+
+      {confirmarLimpiar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl bg-white p-6 text-center shadow-2xl">
+            <h2 className="text-xl font-bold text-wood-900">{t('admin.awsVentasLimpiarConfirmarTitulo')}</h2>
+            <p className="text-base text-wood-600">
+              {t('admin.awsVentasLimpiarConfirmarMensaje', { cantidad: String(resumen.pendientes.length) })}
+            </p>
+            <div className="flex w-full flex-col gap-2 pt-1">
+              <button
+                type="button"
+                onClick={limpiarPendientes}
+                className="w-full rounded-2xl bg-brand-red py-4 text-base font-bold text-white transition-transform active:scale-98"
+              >
+                {t('admin.awsVentasLimpiarConfirmarSi')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmarLimpiar(false)}
+                className="w-full rounded-2xl bg-wood-100 py-4 text-base font-bold text-wood-800 transition-transform active:scale-98"
+              >
+                {t('admin.awsVentasLimpiarConfirmarNo')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1244,6 +1300,13 @@ function PanelCodisaOrdenes() {
   const [resumen, setResumen] = useState(() => obtenerResumenCodisaOrdenes())
   const [reenviando, setReenviando] = useState<string | null>(null)
   const [jsonVisible, setJsonVisible] = useState<string | null>(null)
+  // Confirmación antes de vaciar la cola de pendientes (ver
+  // `limpiarCodisaPendientes` en `services/wsdf.ts`): ADVERTENCIA, a
+  // diferencia del equivalente en `PanelAwsVentas`, acá el payload es la
+  // ÚNICA copia del pedido de factura electrónica — el mensaje de
+  // confirmación (`admin.codisaOrdenesLimpiarConfirmarMensaje`) deja ese
+  // riesgo explícito antes de permitir la acción.
+  const [confirmarLimpiar, setConfirmarLimpiar] = useState(false)
 
   const refrescar = () => setResumen(obtenerResumenCodisaOrdenes())
 
@@ -1261,17 +1324,34 @@ function PanelCodisaOrdenes() {
     setJsonVisible((actual) => (actual === ventaId ? null : ventaId))
   }
 
+  const limpiarPendientes = () => {
+    limpiarCodisaPendientes()
+    setConfirmarLimpiar(false)
+    refrescar()
+  }
+
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-8">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-wood-900">{t('admin.codisaOrdenesTitle')}</h2>
-        <button
-          type="button"
-          onClick={refrescar}
-          className="rounded-full bg-wood-100 px-4 py-2 text-sm font-semibold text-wood-700 transition-transform active:scale-95"
-        >
-          {t('admin.awsVentasRefrescar')}
-        </button>
+        <div className="flex items-center gap-2">
+          {resumen.pendientes.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setConfirmarLimpiar(true)}
+              className="rounded-full bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition-transform active:scale-95"
+            >
+              {t('admin.codisaOrdenesLimpiar')}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={refrescar}
+            className="rounded-full bg-wood-100 px-4 py-2 text-sm font-semibold text-wood-700 transition-transform active:scale-95"
+          >
+            {t('admin.awsVentasRefrescar')}
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-3">
@@ -1341,6 +1421,33 @@ function PanelCodisaOrdenes() {
           </div>
         )}
       </div>
+
+      {confirmarLimpiar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl bg-white p-6 text-center shadow-2xl">
+            <h2 className="text-xl font-bold text-wood-900">{t('admin.codisaOrdenesLimpiarConfirmarTitulo')}</h2>
+            <p className="text-base text-wood-600">
+              {t('admin.codisaOrdenesLimpiarConfirmarMensaje', { cantidad: String(resumen.pendientes.length) })}
+            </p>
+            <div className="flex w-full flex-col gap-2 pt-1">
+              <button
+                type="button"
+                onClick={limpiarPendientes}
+                className="w-full rounded-2xl bg-brand-red py-4 text-base font-bold text-white transition-transform active:scale-98"
+              >
+                {t('admin.codisaOrdenesLimpiarConfirmarSi')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmarLimpiar(false)}
+                className="w-full rounded-2xl bg-wood-100 py-4 text-base font-bold text-wood-800 transition-transform active:scale-98"
+              >
+                {t('admin.codisaOrdenesLimpiarConfirmarNo')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -556,6 +556,25 @@ export function obtenerResumenCodisaOrdenes(): ResumenCodisaOrdenes {
 }
 
 /**
+ * Botón "Limpiar pendientes" manual desde Admin (`PanelCodisaOrdenes`): vacía
+ * por completo la cola de reintentos (`CLAVE_CODISA_PENDIENTES`), SIN
+ * intentar reenviar nada antes.
+ *
+ * ADVERTENCIA (a diferencia de `limpiarAwsPendientes` en `awsVentas.ts`):
+ * acá el `payload` guardado es la ÚNICA copia del pedido de factura
+ * electrónica de esa venta — no hay ningún otro respaldo en el sistema. Si
+ * se limpia sin haber reenviado antes, esa venta queda permanentemente sin
+ * facturar ante Hacienda. Por eso el llamador (UI) DEBE exigir una
+ * confirmación explícita del operador, dejando claro ese riesgo, antes de
+ * invocar esto — igual criterio que cualquier borrado permanente de datos en
+ * este kiosko. No toca `CLAVE_CODISA_ENVIADOS` (historial de éxitos, no es
+ * una cola "pendiente").
+ */
+export function limpiarCodisaPendientes(): void {
+  guardarJsonWsDf(CLAVE_CODISA_PENDIENTES, {})
+}
+
+/**
  * Botón "Reenviar" manual desde Admin (`PanelCodisaOrdenes`): reintenta de
  * inmediato el envío de un pedido que había quedado pendiente, reutilizando
  * EXACTAMENTE el mismo JSON que se armó entonces (no se reconstruye desde la
