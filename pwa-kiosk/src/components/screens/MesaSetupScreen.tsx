@@ -104,21 +104,15 @@ export default function MesaSetupScreen({ onContinuar, onCancelar }: MesaSetupSc
           {/* Lado izquierdo: NO es una columna con layout/tarjeta propia,
               es simplemente espacio vacío de la página (mismo fondo, sin
               borde/tarjeta) donde se inserta la imagen publicitaria.
-              - `md:grid-cols-2` (50/50): se probó ensanchar esta columna a
-                `[1.3fr_1fr]` para hacer la imagen "más ancha", pero la foto
-                es más alta que ancha (466x700px, relación ancho/alto ≈
-                0.666) y con `object-contain` el alto (`max-h-[36vh]` más
-                abajo) es SIEMPRE la dimensión que primero topa contra el
-                límite del bloque — la imagen ya usaba mucho menos ancho del
-                disponible incluso en la columna angosta original, así que
-                ensanchar sólo la columna no la hacía ver más ancha, sólo
-                dejaba más espacio vacío a los lados. Ensancharla de verdad
-                sin recortarla ni distorsionarla (`object-contain` conserva
-                siempre la proporción real) exige subir también el alto, lo
-                que se probó pero achicaba demasiado el espacio hacia el
-                botón "Continuar"/"Cancelar" de abajo; por eso se revirtió a
-                50/50: no hay forma de ensancharla sin ese efecto secundario,
-                así que se deja sin cambio.
+              - `md:grid-cols-2` (50/50): con la foto actual (flyer
+                "DF Pierna de Cerdo", cuadrada, 800x800px, relación 1:1;
+                antes era retrato 466x700 ≈ 0.666) y `object-contain`, el
+                alto (`max-h-[36vh]`/`md:max-h-[68vh]` más abajo) sigue
+                siendo la dimensión que primero topa contra el límite del
+                bloque en las resoluciones de kiosko probadas (ver detalle
+                de `max-h` abajo), así que ensanchar la columna por sí sola
+                no agranda la imagen, sólo el espacio vacío a los lados; se
+                deja 50/50 sin cambio por la misma razón que antes.
               - `h-full` en vez de un alto fijo: en CSS Grid, cuando un ítem
                 con alto porcentual no puede resolverlo en la pasada de
                 medición intrínseca, el motor lo trata como "auto" para
@@ -129,59 +123,52 @@ export default function MesaSetupScreen({ onContinuar, onCancelar }: MesaSetupSc
                 Resultado: el bloque izquierdo SIEMPRE iguala el alto real
                 de la columna derecha, incluso cuando ésta crece al aparecer
                 el selector de identificador tras elegir Sí/No.
-              - `items-center justify-center` en este `<div>` centra la
-                imagen vertical y horizontalmente dentro de ese alto ya
-                igualado al de la columna derecha.
-              - `max-h-[36vh] md:max-h-[60vh]` (antes `max-h-[36vh]` fijo en
-                todas las resoluciones; originalmente un valor en `px`, ej.
-                500px): relativo al alto del viewport en vez de un píxel
+              - `items-center justify-start` en este `<div>` (antes
+                `justify-center`): centra verticalmente pero alinea la
+                imagen al borde IZQUIERDO del bloque en vez de centrarla
+                horizontalmente — con la foto cuadrada actual el ancho
+                disponible del bloque (~456px en las tres resoluciones de
+                kiosko probadas) suele ser mayor que el alto ya acotado por
+                `max-h` (ver abajo), así que sin esto sobraba espacio vacío
+                repartido en ambos lados; pedido explícito de pegar la
+                imagen más hacia la izquierda en vez de dejarla centrada.
+                `object-left` en el `<img>` (abajo) hace lo mismo a nivel
+                del contenido de la imagen dentro de su propia caja.
+              - `max-h-[36vh] md:max-h-[68vh]` (antes `md:max-h-[60vh]`;
+                subido a pedido explícito de que la imagen se viera más
+                grande): relativo al alto del viewport en vez de un píxel
                 fijo, para que la imagen escale junto con el resto de la
                 pantalla en lugar de arriesgarse a exceder el alto
                 disponible en una pantalla de kiosko más baja (M8W) — ver
                 comentario sobre `h-screen overflow-hidden` en el
                 componente. El tope SÍ es el factor que termina dictando el
                 alto de esta fila del grid en la práctica (verificado con
-                DevTools en 1024x600/1366x768/1920x1080): el contenido real
-                de la columna derecha mide ~270-280px sin importar el alto
-                del viewport, así que en pantallas de kiosko normales el
-                `max-h` de este bloque (no la derecha) es quien gana esa
-                comparación — por eso subirlo agranda la imagen de verdad, y
-                no sólo "porque sobre espacio": se midió cuánto margen libre
-                queda entre el grid y la fila de botones de abajo antes de
-                que `justify-between` empiece a comprimirla (el efecto
-                secundario del intento anterior que se evitó esta vez) en
-                las tres resoluciones de prueba, y se subió el tope hasta
-                `60vh` dejando siempre un colchón de sobra: ~68px libres en
-                1024x600 (la más ajustada de las tres), ~115px en 1366x768 y
-                ~202px en 1920x1080 — más allá de `60vh` ese colchón en
-                1024x600 se empieza a achicar demasiado rápido, así que se
-                dejó ahí como techo seguro. `md:` (≥768px de ancho) separa
-                esto del fallback de una sola columna (`grid-cols-1` por
-                debajo de `md`, pantalla angosta/vertical no usada por el
-                kiosko pero igual soportada): ahí la imagen y la columna
-                derecha se apilan, así que agrandar el tope hacía que el
-                selector de identificador se solapara con los botones
-                "Cancelar"/"Continuar" — se deja ese caso en 36vh (el valor
-                original, ya verificado sin overlap) y sólo se agranda en el
-                layout de 2 columnas. El espacio restante
-                dentro del bloque queda vacío y la imagen se mantiene
-                centrada (vertical y horizontalmente) por `items-center
-                justify-center` (no afecta la posición real de los botones,
-                que sigue fija por el `justify-between` del envoltorio, es
-                sólo un ajuste visual de proporción).
+                DevTools/MCP de preview en 1024x600/1366x768/1920x1080):
+                subirlo de 60vh a 68vh agranda la foto cuadrada de ~336px a
+                ~384px de lado en la resolución más ajustada (1024x600, el
+                límite real pasa a ser el ANCHO del bloque ~456px en las
+                otras dos resoluciones, donde la foto ya se ve a tamaño
+                completo). Colchón libre medido entre la imagen y la fila de
+                botones de abajo tras subir a 68vh: ~32px en 1024x600 (la
+                más ajustada; antes ~80px con 60vh), ~108px en 1366x768 y
+                ~382px en 1920x1080 — sin overlap en ninguna. `md:` (≥768px
+                de ancho) separa esto del fallback de una sola columna
+                (`grid-cols-1` por debajo de `md`, pantalla angosta/vertical
+                no usada por el kiosko pero igual soportada): ahí se deja en
+                36vh (valor original, ya verificado sin overlap) y sólo se
+                agranda en el layout de 2 columnas.
               - `object-contain` en el `<img>` (con `h-full w-full`) escala
                 la imagen para ocupar el alto disponible sin distorsión:
-                conserva su proporción real y dentro del propio elemento
-                queda centrada.
+                conserva su proporción real.
               - `p-3` (antes `p-5`) deja un margen más chico alrededor de la
                 imagen para no quede pegada a los límites del bloque, sin
                 restarle más espacio vertical del necesario al resto de la
                 pantalla. */}
-          <div className="flex h-full max-h-[36vh] w-full items-center justify-center p-3 md:max-h-[60vh]">
+          <div className="flex h-full max-h-[36vh] w-full items-center justify-start p-3 md:max-h-[68vh]">
             <img
               src={piernaCerdoFlyer}
               alt={t('mesaSetup.espacioPublicidad')}
-              className="h-full w-full rounded-xl object-contain"
+              className="h-full w-full rounded-xl object-contain object-left"
             />
           </div>
 
