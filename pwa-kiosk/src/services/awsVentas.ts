@@ -1,5 +1,6 @@
 import type { WsDfPayload } from '../types/wsdf'
 import { CAJA_ID } from './consecutivo'
+import { camposPeriodoAws, periodoDesdeFechaCodisa } from './periodoOrdenes'
 
 /**
  * Integración con el backend propio en AWS (API Gateway) para recibir una
@@ -44,6 +45,22 @@ export interface CancelacionAwsPayload {
   cancelledAt: string
   authorizationNumber: string
   referenceNumber: string
+}
+
+/**
+ * Cuerpo enviado a AWS al registrar una venta: el MISMO pedido que recibe
+ * Codisa (`{ pedido: {...} }`, sin modificarlo) MÁS campos propios de
+ * AWS al nivel raíz, junto a `pedido` — nunca dentro de él ni en el JSON que
+ * se manda a Codisa:
+ * - `status: "ACTIVE"` (pasa a `"CANCELLED"` vía `enviarCancelacionAws`).
+ * - `year`, `month`, `monthName`, `yearMonth`: período de la venta (hora
+ *   local, derivado de `pedido.fecha`) para filtros, búsquedas y QuickSight.
+ * Se arma al momento de enviar (no al encolar), así los pendientes viejos
+ * guardados antes de este cambio también salen con los campos nuevos.
+ */
+export function construirCuerpoAwsVenta(payload: WsDfPayload): Record<string, unknown> {
+  const periodo = periodoDesdeFechaCodisa(payload.pedido.fecha)
+  return { ...payload, status: 'ACTIVE', ...(periodo ? camposPeriodoAws(periodo) : {}) }
 }
 
 /** Tiempo máximo de espera por una respuesta antes de abortar (mismo valor que `wsdf.ts`). */
@@ -204,7 +221,7 @@ export async function enviarVentaAws(payload: WsDfPayload): Promise<void> {
   const ventaId = payload.pedido.id
   if (yaFueEnviado(ventaId)) return // protección anti-duplicado
 
-  const resultado = await intentarEnvioAws(payload, ventaId)
+  const resultado = await intentarEnvioAws(construirCuerpoAwsVenta(payload), ventaId)
   if (resultado.ok) {
     marcarEnviado(ventaId)
     return
@@ -227,7 +244,7 @@ async function reintentarPendiente(ventaId: string, manual: boolean): Promise<vo
   const item = pendientes[ventaId]
   if (!item) return // ya no existe (pudo marcarse enviado por otra vía mientras tanto)
 
-  const resultado = await intentarEnvioAws(item.payload, ventaId)
+  const resultado = await intentarEnvioAws(construirCuerpoAwsVenta(item.payload), ventaId)
   if (resultado.ok) {
     marcarEnviado(ventaId)
     return

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CATEGORIES, PRODUCTS, categoryDisplayName, formatCRC, productDisplayName } from '../../data/catalog'
 import { actualizarAgotado, actualizarPrecio } from '../../services/catalogOverrides'
 import {
@@ -9,8 +9,10 @@ import {
   soloOrdenesActivas,
 } from '../../services/offlineQueue'
 import { enviarTicket } from '../../services/backendPrint'
+import { NOMBRES_MES, agruparPorAnioMes, obtenerPeriodo } from '../../services/periodoOrdenes'
 import {
   NOMBRES_IMPRESORA,
+  formatFechaHoraAmPm,
   formatHoraAmPm,
   generarTickets,
   ticketCancelacionVoucher,
@@ -464,23 +466,40 @@ function esDeHoy(fechaHora: string): boolean {
   return fecha.toDateString() === hoy.toDateString()
 }
 
+/**
+ * Histórico de órdenes organizado como carpetas Año → Mes (ver
+ * `agruparPorAnioMes` en `services/periodoOrdenes.ts`). Cada carpeta se
+ * expande/contrae; el año y el mes actuales arrancan abiertos. Las órdenes
+ * CANCELADA permanecen dentro de su mes (visualmente tachadas) pero no suman
+ * al monto ni al total de órdenes de la carpeta; sólo se cuentan aparte.
+ */
 function PanelOrdenesDelDia() {
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
   const [ventas, setVentas] = useState<VentaEnCola[] | null>(null)
   const [expandida, setExpandida] = useState<string | null>(null)
+  const [abiertas, setAbiertas] = useState<Set<string>>(() => {
+    const ahora = obtenerPeriodo(new Date().toISOString())
+    return new Set([`y:${ahora.year}`, `m:${ahora.yearMonth}`])
+  })
 
   useEffect(() => {
-    obtenerTodasLasVentas().then((todas) => {
-      const deHoy = todas
-        .filter((v) => esDeHoy(v.venta.fechaHora))
-        .sort((a, b) => b.venta.fechaHora.localeCompare(a.venta.fechaHora))
-      setVentas(deHoy)
-    })
+    obtenerTodasLasVentas().then(setVentas)
   }, [])
+
+  const anios = useMemo(() => agruparPorAnioMes(ventas ?? []), [ventas])
 
   /** Refleja en la lista una orden recién cancelada (ya persistida en IndexedDB por `DetalleOrden`). */
   const reemplazarVenta = (actualizada: Venta) => {
     setVentas((prev) => prev?.map((item) => (item.id === actualizada.id ? { ...item, venta: actualizada } : item)) ?? prev)
+  }
+
+  const alternarCarpeta = (clave: string) => {
+    setAbiertas((prev) => {
+      const siguiente = new Set(prev)
+      if (siguiente.has(clave)) siguiente.delete(clave)
+      else siguiente.add(clave)
+      return siguiente
+    })
   }
 
   if (ventas === null) {
@@ -492,69 +511,137 @@ function PanelOrdenesDelDia() {
   }
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6">
+    <div className="mx-auto flex max-w-2xl flex-col gap-4">
       <h2 className="text-lg font-bold text-wood-900">{t('admin.ordenesTitle')}</h2>
-      <div className="flex flex-col gap-3">
-        {ventas.map(({ venta }) => {
-          const cancelada = estaCancelada(venta)
-          return (
-          <div
-            key={venta.id}
-            className={`overflow-hidden rounded-xl shadow-sm shadow-wood-900/5 ${
-              cancelada ? 'border border-red-200 bg-red-50' : 'bg-white'
-            }`}
-          >
+      {anios.map((anio) => {
+        const claveAnio = `y:${anio.year}`
+        const anioAbierto = abiertas.has(claveAnio)
+        return (
+          <div key={anio.year} className="flex flex-col gap-3">
             <button
               type="button"
-              onClick={() => setExpandida(expandida === venta.id ? null : venta.id)}
-              className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
+              onClick={() => alternarCarpeta(claveAnio)}
+              aria-expanded={anioAbierto}
+              className="flex w-full items-center gap-3 rounded-xl bg-wood-900 px-4 py-3 text-left text-cream-50"
             >
-              <div className="flex flex-col">
-                <span className={`font-bold ${cancelada ? 'text-wood-400 line-through' : 'text-wood-900'}`}>#{venta.id}</span>
-                <span className="text-sm text-wood-500">
-                  {formatHoraAmPm(new Date(venta.fechaHora), false)}
-                  {' · '}
-                  {t('admin.ordenesMesa', { mesa: venta.mesa })}
-                </span>
-                {cancelada && venta.cancelledAt && (
-                  <span className="text-sm font-semibold text-red-700">
-                    {t('admin.ordenesCanceladaHora', { hora: formatHoraAmPm(new Date(venta.cancelledAt), false) })}
-                  </span>
-                )}
-                {/* Autorización/referencia del datáfono BAC (ver
-                    `Venta.autorizacionDatafono`/`referenciaDatafono` en
-                    types/order.ts): sólo presentes en ventas cobradas con
-                    datáfono, no en facturas/ventas antiguas sin estos campos. */}
-                {(venta.autorizacionDatafono || venta.referenciaDatafono) && (
-                  <span className="text-xs text-wood-400">
-                    {venta.autorizacionDatafono &&
-                      `${t('admin.ordenesAutorizacion')}: ${venta.autorizacionDatafono}`}
-                    {venta.autorizacionDatafono && venta.referenciaDatafono && ' · '}
-                    {venta.referenciaDatafono &&
-                      `${t('admin.ordenesReferencia')}: ${venta.referenciaDatafono}`}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-3">
-                {cancelada ? (
-                  <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-700">
-                    {t('admin.ordenesCancelada')}
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">
-                    {venta.tipoPago === 'factura' ? t('admin.ordenesFactura') : t('admin.ordenesPagado')}
-                  </span>
-                )}
-                <span className={`font-bold ${cancelada ? 'text-wood-400 line-through' : 'text-brand-red'}`}>
-                  {formatCRC(venta.total)}
-                </span>
-              </div>
+              <span aria-hidden="true">{anioAbierto ? '▼' : '▶'}</span>
+              <span className="text-lg font-extrabold">{anio.year}</span>
+              <span className="ml-auto text-sm text-cream-100">
+                {anio.totalOrdenes} · {formatCRC(anio.ventasTotales)}
+              </span>
             </button>
-            {expandida === venta.id && <DetalleOrden venta={venta} onCancelada={reemplazarVenta} />}
+            {anioAbierto &&
+              anio.meses.map((mes) => {
+                const claveMes = `m:${mes.periodo.yearMonth}`
+                const mesAbierto = abiertas.has(claveMes)
+                return (
+                  <div key={mes.periodo.yearMonth} className="ml-3 flex flex-col gap-3 border-l-2 border-wood-200 pl-3">
+                    <button
+                      type="button"
+                      onClick={() => alternarCarpeta(claveMes)}
+                      aria-expanded={mesAbierto}
+                      className="flex w-full flex-col gap-2 rounded-xl bg-wood-100 px-4 py-3 text-left"
+                    >
+                      <span className="flex items-center gap-3 font-bold text-wood-900">
+                        <span aria-hidden="true">{mesAbierto ? '▼' : '▶'}</span>
+                        {NOMBRES_MES[language][mes.periodo.month - 1]} {mes.periodo.year}
+                      </span>
+                      <span className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-wood-700">
+                        <span>
+                          {t('admin.historicoTotalOrdenes')}: <b>{mes.totalOrdenes}</b>
+                        </span>
+                        <span>
+                          {t('admin.historicoCanceladas')}: <b className={mes.ordenesCanceladas > 0 ? 'text-red-700' : ''}>{mes.ordenesCanceladas}</b>
+                        </span>
+                        <span>
+                          {t('admin.historicoVentasTotales')}: <b>{formatCRC(mes.ventasTotales)}</b>
+                        </span>
+                        <span>
+                          {t('admin.historicoTicketPromedio')}: <b>{formatCRC(Math.round(mes.ticketPromedio))}</b>
+                        </span>
+                      </span>
+                    </button>
+                    {mesAbierto && (
+                      <div className="flex flex-col gap-3">
+                        {mes.ordenes.map(({ venta }) => (
+                          <FilaOrden
+                            key={venta.id}
+                            venta={venta}
+                            abierta={expandida === venta.id}
+                            onAlternar={() => setExpandida(expandida === venta.id ? null : venta.id)}
+                            onCancelada={reemplazarVenta}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
           </div>
-          )
-        })}
-      </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function FilaOrden({
+  venta,
+  abierta,
+  onAlternar,
+  onCancelada,
+}: {
+  venta: Venta
+  abierta: boolean
+  onAlternar: () => void
+  onCancelada: (v: Venta) => void
+}) {
+  const { t } = useLanguage()
+  const cancelada = estaCancelada(venta)
+  return (
+    <div
+      className={`overflow-hidden rounded-xl shadow-sm shadow-wood-900/5 ${
+        cancelada ? 'border border-red-200 bg-red-50' : 'bg-white'
+      }`}
+    >
+      <button type="button" onClick={onAlternar} className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left">
+        <div className="flex flex-col">
+          <span className={`font-bold ${cancelada ? 'text-wood-400 line-through' : 'text-wood-900'}`}>#{venta.id}</span>
+          <span className="text-sm text-wood-500">
+            {esDeHoy(venta.fechaHora)
+              ? formatHoraAmPm(new Date(venta.fechaHora), false)
+              : formatFechaHoraAmPm(new Date(venta.fechaHora), false)}
+            {' · '}
+            {t('admin.ordenesMesa', { mesa: venta.mesa })}
+          </span>
+          {cancelada && venta.cancelledAt && (
+            <span className="text-sm font-semibold text-red-700">
+              {t('admin.ordenesCanceladaHora', { hora: formatHoraAmPm(new Date(venta.cancelledAt), false) })}
+            </span>
+          )}
+          {/* Autorización/referencia del datáfono BAC (ver
+              `Venta.autorizacionDatafono`/`referenciaDatafono` en
+              types/order.ts): sólo presentes en ventas cobradas con
+              datáfono, no en facturas/ventas antiguas sin estos campos. */}
+          {(venta.autorizacionDatafono || venta.referenciaDatafono) && (
+            <span className="text-xs text-wood-400">
+              {venta.autorizacionDatafono && `${t('admin.ordenesAutorizacion')}: ${venta.autorizacionDatafono}`}
+              {venta.autorizacionDatafono && venta.referenciaDatafono && ' · '}
+              {venta.referenciaDatafono && `${t('admin.ordenesReferencia')}: ${venta.referenciaDatafono}`}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          {cancelada ? (
+            <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-700">{t('admin.ordenesCancelada')}</span>
+          ) : (
+            <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">
+              {venta.tipoPago === 'factura' ? t('admin.ordenesFactura') : t('admin.ordenesPagado')}
+            </span>
+          )}
+          <span className={`font-bold ${cancelada ? 'text-wood-400 line-through' : 'text-brand-red'}`}>{formatCRC(venta.total)}</span>
+        </div>
+      </button>
+      {abierta && <DetalleOrden venta={venta} onCancelada={onCancelada} />}
     </div>
   )
 }
@@ -619,7 +706,12 @@ function DetalleOrden({ venta, onCancelada }: { venta: Venta; onCancelada: (v: V
   // `types/datafono.ts`). Si por lo que sea una venta no tiene esos campos
   // (ej. registro antiguo), no se ofrece la acción en vez de mandar un VOID
   // sin los datos que el TM necesita.
-  const puedeCancelar = Boolean(venta.autorizacionDatafono && venta.referenciaDatafono)
+  const tieneDatosVoid = Boolean(venta.autorizacionDatafono && venta.referenciaDatafono)
+  // Sólo órdenes del día: el cierre de lote del datáfono ya incluye las de
+  // días anteriores y el TM no puede anularlas (y antes de existir el
+  // histórico esta pantalla sólo mostraba las de hoy).
+  const esDelDia = esDeHoy(venta.fechaHora)
+  const puedeCancelar = tieneDatosVoid && esDelDia
 
   /**
    * Anulación (`VOID`) de la orden contra el mismo Transaction Manager del
@@ -779,6 +871,9 @@ function DetalleOrden({ venta, onCancelada }: { venta: Venta; onCancelada: (v: V
           {cancelada && <p className="mt-2 text-sm font-semibold text-red-700">{t('admin.ordenesYaCancelada')}</p>}
         </div>
       )}
+      {tieneDatosVoid && !esDelDia && !cancelada && (
+        <p className="mt-4 border-t border-wood-200 pt-4 text-sm text-wood-500">{t('admin.ordenesSoloHoy')}</p>
+      )}
 
       {mostrarConfirmacionCancelar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -933,7 +1028,7 @@ function PanelCierreCaja() {
       <h2 className="text-lg font-bold text-wood-900">{t('admin.cierreTitle')}</h2>
 
       {ventasActivas.length === 0 ? (
-        <p className="text-center text-wood-500">{t('admin.ordenesVacio')}</p>
+        <p className="text-center text-wood-500">{t('admin.cierreVacio')}</p>
       ) : (
         <div className="flex flex-col divide-y divide-wood-100 rounded-xl bg-white shadow-sm shadow-wood-900/5">
           {ventasActivas.map(({ venta }) => (
