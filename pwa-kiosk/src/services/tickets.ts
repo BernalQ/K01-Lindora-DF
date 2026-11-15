@@ -1,5 +1,6 @@
 import { GUARNICIONES, PRODUCTS, opcionParaMostrar } from '../data/catalog'
 import { CAJA_ID } from './consecutivo'
+import { estaCancelada } from './offlineQueue'
 import type { CategoryId } from '../types/catalog'
 import type { OrderItem, Venta } from '../types/order'
 import type { ResultadoDatafono } from '../types/datafono'
@@ -821,7 +822,11 @@ function lineaOrdenCierre(numeroOrden: string, hora: string, total: string): str
  * formato de monto en texto plano, sin el símbolo ₡ (que en ESC/POS requiere
  * rasterizarse como imagen, ver `services/escpos.ts`).
  */
-export function ticketCierreCaja(ordenes: Venta[]): TicketLine[] {
+export function ticketCierreCaja(todasLasOrdenes: Venta[]): TicketLine[] {
+  // Las órdenes CANCELADAS no se imprimen ni suman al cierre (sólo quedan
+  // para auditoría). El panel ya las filtra, pero se repite acá para que
+  // cualquier otro llamador de este tiquete sea seguro por construcción.
+  const ordenes = todasLasOrdenes.filter((venta) => !estaCancelada(venta))
   const ahora = new Date()
   const caja = ordenes[0]?.caja ?? CAJA_ID
   const lineas: TicketLine[] = [
@@ -874,15 +879,22 @@ export function ticketCierreCaja(ordenes: Venta[]): TicketLine[] {
 export function ticketCancelacionVoucher(venta: Venta, resultadoVoid: ResultadoDatafono): TicketLine[] {
   const numeroTransaccion = resultadoVoid.referenceNumber ?? venta.referenciaDatafono
   const numeroAutorizacion = resultadoVoid.authorizationNumber ?? venta.autorizacionDatafono
+  // Sólo un VOID aprobado (`responseCode "00"`) deja la orden cancelada; si el
+  // TM lo rechazó, el comprobante NO puede decir "ORDEN CANCELADA".
+  const aprobada = resultadoVoid.responseCode === '00'
+  const fechaHora = new Date(venta.cancelledAt ?? Date.now())
 
   const lineas: TicketLine[] = [
     ...encabezadoCliente(venta),
     { text: 'Recibo de Cancelación de Orden', bold: true },
+    { text: aprobada ? 'ORDEN CANCELADA' : 'CANCELACIÓN NO APROBADA', bold: true },
     '',
+    `Número de Orden: ${venta.id}`,
   ]
 
   if (numeroTransaccion) lineas.push(`Número de Transacción: ${numeroTransaccion}`)
   if (numeroAutorizacion) lineas.push(`Número de Autorización: ${numeroAutorizacion}`)
+  lineas.push(`Fecha/Hora: ${formatFechaHoraAmPm(fechaHora, true)}`)
 
   lineas.push('')
   lineas.push('Gracias por su compra')

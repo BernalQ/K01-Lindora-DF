@@ -69,7 +69,21 @@ export interface Venta {
    */
   autorizacionDatafono?: string
   referenciaDatafono?: string
+  /**
+   * Auditoría de cancelación. Una orden nunca se borra: al anularse (VOID
+   * aprobado por el TM, `responseCode "00"`) pasa de `'ACTIVE'` a
+   * `'CANCELLED'` y se llenan `cancelledAt`/`cancelledBy`. Ausente (ventas
+   * guardadas antes de este campo) equivale a `'ACTIVE'` — usar
+   * `estaCancelada` (`services/offlineQueue.ts`) en vez de comparar a mano.
+   */
+  status?: EstadoOrden
+  /** ISO 8601 del momento en que el TM aprobó la anulación. */
+  cancelledAt?: string
+  /** Quién anuló la orden: el panel Admin no tiene usuarios (sólo PIN), así que es `"ADMIN (<CAJA_ID>)"`. */
+  cancelledBy?: string
 }
+
+export type EstadoOrden = 'ACTIVE' | 'CANCELLED'
 
 export type EstadoVenta = 'pendiente' | 'impreso' | 'sincronizado' | 'error'
 

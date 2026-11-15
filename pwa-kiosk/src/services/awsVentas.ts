@@ -25,6 +25,25 @@ import { CAJA_ID } from './consecutivo'
  */
 export const AWS_VENTAS_CONFIG = {
   endpoint: 'https://3zr1r05mwc.execute-api.us-east-1.amazonaws.com/v1/ventas',
+  /**
+   * Endpoint de CANCELACIONES (ver `enviarCancelacionAws`). Hoy no existe uno
+   * específico, así que por defecto es el mismo de ventas: el backend debe
+   * tratar un POST con `status: "CANCELLED"` + `orderId` como actualización
+   * (upsert) de la orden existente, nunca como una venta nueva. Cuando AWS
+   * publique un endpoint dedicado basta con definir `VITE_AWS_CANCELACION_URL`
+   * en el `.env` y rebuild — no hay que tocar código.
+   */
+  endpointCancelacion: import.meta.env.VITE_AWS_CANCELACION_URL || 'https://3zr1r05mwc.execute-api.us-east-1.amazonaws.com/v1/ventas',
+}
+
+/** Cuerpo enviado a AWS al anular una orden (ver `enviarCancelacionAws`). La orden NO se borra en AWS: sólo cambia su estado. */
+export interface CancelacionAwsPayload {
+  orderId: string
+  status: 'CANCELLED'
+  /** ISO 8601 del momento en que el TM del BAC aprobó el VOID. */
+  cancelledAt: string
+  authorizationNumber: string
+  referenceNumber: string
 }
 
 /** Tiempo máximo de espera por una respuesta antes de abortar (mismo valor que `wsdf.ts`). */
@@ -141,29 +160,33 @@ function marcarEnviado(ventaId: string): void {
  * un build viejo, ver historial) — con este log, un problema similar a
  * futuro se detecta de inmediato abriendo las DevTools del kiosko.
  */
-async function intentarEnvioAws(payload: WsDfPayload): Promise<{ ok: boolean; error?: string }> {
+async function intentarEnvioAws(
+  cuerpoJson: unknown,
+  ventaId: string,
+  url: string = AWS_VENTAS_CONFIG.endpoint,
+): Promise<{ ok: boolean; error?: string }> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
-    const res = await fetch(AWS_VENTAS_CONFIG.endpoint, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKeyPropia() },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(cuerpoJson),
       signal: controller.signal,
     })
     if (!res.ok) {
       const cuerpo = await res.text().catch(() => '(no se pudo leer el cuerpo de la respuesta)')
-      console.error(`[aws-ventas] AWS respondió con error HTTP ${res.status} para la venta "${payload.pedido.id}":`, cuerpo)
+      console.error(`[aws-ventas] AWS respondió con error HTTP ${res.status} para la venta "${ventaId}":`, cuerpo)
       return { ok: false, error: `Error HTTP ${res.status}: ${cuerpo}` }
     }
     return { ok: true }
   } catch (err) {
     if ((err as Error).name === 'AbortError') {
       const mensaje = `Tiempo de espera agotado (${TIMEOUT_MS / 1000}s)`
-      console.error(`[aws-ventas] ${mensaje} al enviar la venta "${payload.pedido.id}" a AWS.`)
+      console.error(`[aws-ventas] ${mensaje} al enviar la venta "${ventaId}" a AWS.`)
       return { ok: false, error: mensaje }
     }
-    console.error(`[aws-ventas] No se pudo contactar AWS para la venta "${payload.pedido.id}":`, err)
+    console.error(`[aws-ventas] No se pudo contactar AWS para la venta "${ventaId}":`, err)
     return { ok: false, error: `No se pudo contactar AWS: ${(err as Error).message}` }
   } finally {
     clearTimeout(timeoutId)
@@ -181,7 +204,7 @@ export async function enviarVentaAws(payload: WsDfPayload): Promise<void> {
   const ventaId = payload.pedido.id
   if (yaFueEnviado(ventaId)) return // protección anti-duplicado
 
-  const resultado = await intentarEnvioAws(payload)
+  const resultado = await intentarEnvioAws(payload, ventaId)
   if (resultado.ok) {
     marcarEnviado(ventaId)
     return
@@ -204,7 +227,7 @@ async function reintentarPendiente(ventaId: string, manual: boolean): Promise<vo
   const item = pendientes[ventaId]
   if (!item) return // ya no existe (pudo marcarse enviado por otra vía mientras tanto)
 
-  const resultado = await intentarEnvioAws(item.payload)
+  const resultado = await intentarEnvioAws(item.payload, ventaId)
   if (resultado.ok) {
     marcarEnviado(ventaId)
     return
@@ -230,13 +253,126 @@ export async function reenviarVentaAwsManual(ventaId: string): Promise<void> {
   await reintentarPendiente(ventaId, true)
 }
 
+/* ------------------------------------------------------------------ */
+/* Cancelaciones (orden anulada con VOID aprobado por el TM del BAC).  */
+/* ------------------------------------------------------------------ */
+
+const CLAVE_CANCELACIONES_PENDIENTES = 'aws_cancelaciones_pendientes_v1'
+const CLAVE_CANCELACIONES_ENVIADAS = 'aws_cancelaciones_enviadas_v1'
+
+/** Una cancelación que falló y espera su próximo reintento automático (o reenvío manual). */
+export interface EnvioCancelacionAwsPendiente {
+  ventaId: string
+  payload: CancelacionAwsPayload
+  intentos: number
+  ultimoError: string
+  proximoIntentoEn: string
+  agotado: boolean
+}
+
+type CancelacionesPendientesGuardadas = Record<string, Omit<EnvioCancelacionAwsPendiente, 'agotado'>>
+
+function leerCancelacionesPendientes(): CancelacionesPendientesGuardadas {
+  return leerJson(CLAVE_CANCELACIONES_PENDIENTES, {})
+}
+
+function marcarCancelacionEnviada(ventaId: string): void {
+  const enviadas = leerJson<Record<string, string>>(CLAVE_CANCELACIONES_ENVIADAS, {})
+  enviadas[ventaId] = new Date().toISOString()
+  guardarJson(CLAVE_CANCELACIONES_ENVIADAS, enviadas)
+
+  const pendientes = leerCancelacionesPendientes()
+  if (ventaId in pendientes) {
+    delete pendientes[ventaId]
+    guardarJson(CLAVE_CANCELACIONES_PENDIENTES, pendientes)
+  }
+}
+
+/**
+ * Un solo intento de enviar la cancelación. Si la venta original todavía está
+ * pendiente en AWS (nunca llegó), primero se reintenta ESA: así AWS nunca
+ * recibe la cancelación de una orden que no conoce, ni la venta original
+ * "pisa" después a la cancelación. Si la venta sigue sin llegar, la
+ * cancelación queda para el siguiente reintento.
+ */
+async function intentarCancelacion(payload: CancelacionAwsPayload): Promise<{ ok: boolean; error?: string }> {
+  if (payload.orderId in leerPendientes()) {
+    await reintentarPendiente(payload.orderId, true)
+    if (payload.orderId in leerPendientes()) {
+      return { ok: false, error: 'La venta original aún no está confirmada en AWS; la cancelación se enviará después.' }
+    }
+  }
+  return intentarEnvioAws(payload, payload.orderId, AWS_VENTAS_CONFIG.endpointCancelacion)
+}
+
+/**
+ * Notifica a AWS que una orden fue CANCELADA (la orden NO se borra, sólo
+ * cambia su estado para auditoría). Se llama una vez que el TM del BAC
+ * aprobó el VOID (`responseCode "00"`). "Fire-and-forget" igual que
+ * `enviarVentaAws`: no lanza; si falla queda en cola con reintento automático
+ * (mismo intervalo/tope que las ventas) y reenvío manual en Admin → Envíos a
+ * AWS. `PanelAwsVentas.limpiarAwsPendientes` NO vacía esta cola a propósito:
+ * una cancelación perdida dejaría la venta contando en los dashboards.
+ */
+export async function enviarCancelacionAws(payload: CancelacionAwsPayload): Promise<void> {
+  const enviadas = leerJson<Record<string, string>>(CLAVE_CANCELACIONES_ENVIADAS, {})
+  if (payload.orderId in enviadas) return // protección anti-duplicado
+
+  const resultado = await intentarCancelacion(payload)
+  if (resultado.ok) {
+    marcarCancelacionEnviada(payload.orderId)
+    return
+  }
+
+  const pendientes = leerCancelacionesPendientes()
+  pendientes[payload.orderId] = {
+    ventaId: payload.orderId,
+    payload,
+    intentos: 1,
+    ultimoError: resultado.error ?? 'Error desconocido',
+    proximoIntentoEn: new Date(Date.now() + INTERVALO_REINTENTO_MS).toISOString(),
+  }
+  guardarJson(CLAVE_CANCELACIONES_PENDIENTES, pendientes)
+}
+
+async function reintentarCancelacionPendiente(ventaId: string, manual: boolean): Promise<void> {
+  const item = leerCancelacionesPendientes()[ventaId]
+  if (!item) return
+
+  const resultado = await intentarCancelacion(item.payload)
+  if (resultado.ok) {
+    marcarCancelacionEnviada(ventaId)
+    return
+  }
+
+  const actuales = leerCancelacionesPendientes()
+  const actual = actuales[ventaId]
+  if (!actual) return
+  actuales[ventaId] = {
+    ...actual,
+    intentos: manual ? actual.intentos : actual.intentos + 1,
+    ultimoError: resultado.error ?? 'Error desconocido',
+    proximoIntentoEn: new Date(Date.now() + INTERVALO_REINTENTO_MS).toISOString(),
+  }
+  guardarJson(CLAVE_CANCELACIONES_PENDIENTES, actuales)
+}
+
+/** Botón "Reenviar" manual de una cancelación pendiente (ver `PanelAwsVentas`). */
+export async function reenviarCancelacionAwsManual(ventaId: string): Promise<void> {
+  await reintentarCancelacionPendiente(ventaId, true)
+}
+
 function revisarPendientesVencidos(): void {
-  const pendientes = leerPendientes()
   const ahora = Date.now()
-  Object.values(pendientes).forEach((item) => {
+  Object.values(leerPendientes()).forEach((item) => {
     if (item.intentos >= 1 + MAX_REINTENTOS) return // agotado: sólo reenvío manual desde acá en adelante
     if (new Date(item.proximoIntentoEn).getTime() > ahora) return
     void reintentarPendiente(item.ventaId, false)
+  })
+  Object.values(leerCancelacionesPendientes()).forEach((item) => {
+    if (item.intentos >= 1 + MAX_REINTENTOS) return
+    if (new Date(item.proximoIntentoEn).getTime() > ahora) return
+    void reintentarCancelacionPendiente(item.ventaId, false)
   })
 }
 
@@ -259,6 +395,7 @@ export function iniciarRevisionAwsVentas(): void {
 export interface ResumenAwsVentas {
   enviados: EnvioAwsExitoso[]
   pendientes: EnvioAwsPendiente[]
+  cancelacionesPendientes: EnvioCancelacionAwsPendiente[]
 }
 
 export function obtenerResumenAwsVentas(): ResumenAwsVentas {
@@ -266,7 +403,10 @@ export function obtenerResumenAwsVentas(): ResumenAwsVentas {
   const pendientes = Object.values(leerPendientes())
     .map((p) => ({ ...p, agotado: p.intentos >= 1 + MAX_REINTENTOS }))
     .sort((a, b) => b.proximoIntentoEn.localeCompare(a.proximoIntentoEn))
-  return { enviados, pendientes }
+  const cancelacionesPendientes = Object.values(leerCancelacionesPendientes())
+    .map((p) => ({ ...p, agotado: p.intentos >= 1 + MAX_REINTENTOS }))
+    .sort((a, b) => b.proximoIntentoEn.localeCompare(a.proximoIntentoEn))
+  return { enviados, pendientes, cancelacionesPendientes }
 }
 
 /**

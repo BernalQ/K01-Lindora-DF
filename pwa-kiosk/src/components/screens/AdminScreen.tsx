@@ -1,7 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CATEGORIES, PRODUCTS, categoryDisplayName, formatCRC, productDisplayName } from '../../data/catalog'
 import { actualizarAgotado, actualizarPrecio } from '../../services/catalogOverrides'
-import { obtenerTodasLasVentas } from '../../services/offlineQueue'
+import {
+  estaCancelada,
+  marcarVentaCancelada,
+  obtenerTodasLasVentas,
+  obtenerVentaPorId,
+  soloOrdenesActivas,
+} from '../../services/offlineQueue'
 import { enviarTicket } from '../../services/backendPrint'
 import {
   NOMBRES_IMPRESORA,
@@ -16,10 +22,13 @@ import { CAJA_ID, STORAGE_KEY_CAJA_ID } from '../../services/consecutivo'
 import { verificarConexionRemota } from '../../services/kioskoTransport'
 import { useSyncStatusStore } from '../../store/syncStatusStore'
 import {
+  enviarCancelacionAws,
   obtenerResumenAwsVentas,
+  reenviarCancelacionAwsManual,
   reenviarVentaAwsManual,
   limpiarAwsPendientes,
   type EnvioAwsPendiente,
+  type EnvioCancelacionAwsPendiente,
 } from '../../services/awsVentas'
 import {
   obtenerResumenCodisaOrdenes,
@@ -28,7 +37,7 @@ import {
   type EnvioCodisaPendiente,
 } from '../../services/wsdf'
 import type { Product } from '../../types/catalog'
-import type { VentaEnCola } from '../../types/order'
+import type { Venta, VentaEnCola } from '../../types/order'
 import type { ResultadoDatafono } from '../../types/datafono'
 import { useLanguage } from '../../context/useLanguage'
 import DatafonoPopup from '../ui/DatafonoPopup'
@@ -469,6 +478,11 @@ function PanelOrdenesDelDia() {
     })
   }, [])
 
+  /** Refleja en la lista una orden recién cancelada (ya persistida en IndexedDB por `DetalleOrden`). */
+  const reemplazarVenta = (actualizada: Venta) => {
+    setVentas((prev) => prev?.map((item) => (item.id === actualizada.id ? { ...item, venta: actualizada } : item)) ?? prev)
+  }
+
   if (ventas === null) {
     return <p className="text-center text-wood-500">{t('admin.cargando')}</p>
   }
@@ -481,20 +495,32 @@ function PanelOrdenesDelDia() {
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <h2 className="text-lg font-bold text-wood-900">{t('admin.ordenesTitle')}</h2>
       <div className="flex flex-col gap-3">
-        {ventas.map(({ venta }) => (
-          <div key={venta.id} className="overflow-hidden rounded-xl bg-white shadow-sm shadow-wood-900/5">
+        {ventas.map(({ venta }) => {
+          const cancelada = estaCancelada(venta)
+          return (
+          <div
+            key={venta.id}
+            className={`overflow-hidden rounded-xl shadow-sm shadow-wood-900/5 ${
+              cancelada ? 'border border-red-200 bg-red-50' : 'bg-white'
+            }`}
+          >
             <button
               type="button"
               onClick={() => setExpandida(expandida === venta.id ? null : venta.id)}
               className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
             >
               <div className="flex flex-col">
-                <span className="font-bold text-wood-900">#{venta.id}</span>
+                <span className={`font-bold ${cancelada ? 'text-wood-400 line-through' : 'text-wood-900'}`}>#{venta.id}</span>
                 <span className="text-sm text-wood-500">
                   {formatHoraAmPm(new Date(venta.fechaHora), false)}
                   {' · '}
                   {t('admin.ordenesMesa', { mesa: venta.mesa })}
                 </span>
+                {cancelada && venta.cancelledAt && (
+                  <span className="text-sm font-semibold text-red-700">
+                    {t('admin.ordenesCanceladaHora', { hora: formatHoraAmPm(new Date(venta.cancelledAt), false) })}
+                  </span>
+                )}
                 {/* Autorización/referencia del datáfono BAC (ver
                     `Venta.autorizacionDatafono`/`referenciaDatafono` en
                     types/order.ts): sólo presentes en ventas cobradas con
@@ -510,15 +536,24 @@ function PanelOrdenesDelDia() {
                 )}
               </div>
               <div className="flex items-center gap-3">
-                <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">
-                  {venta.tipoPago === 'factura' ? t('admin.ordenesFactura') : t('admin.ordenesPagado')}
+                {cancelada ? (
+                  <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-700">
+                    {t('admin.ordenesCancelada')}
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">
+                    {venta.tipoPago === 'factura' ? t('admin.ordenesFactura') : t('admin.ordenesPagado')}
+                  </span>
+                )}
+                <span className={`font-bold ${cancelada ? 'text-wood-400 line-through' : 'text-brand-red'}`}>
+                  {formatCRC(venta.total)}
                 </span>
-                <span className="font-bold text-brand-red">{formatCRC(venta.total)}</span>
               </div>
             </button>
-            {expandida === venta.id && <DetalleOrden venta={venta} />}
+            {expandida === venta.id && <DetalleOrden venta={venta} onCancelada={reemplazarVenta} />}
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -541,8 +576,11 @@ const ORDEN_IMPRESION: PrinterId[] = ['cliente', 'restaurante', 'carniceria']
  */
 type EstadoImpresion = 'enviando' | 'ok' | 'simulado' | 'error' | null
 
-function DetalleOrden({ venta }: { venta: VentaEnCola['venta'] }) {
+function DetalleOrden({ venta, onCancelada }: { venta: Venta; onCancelada: (v: Venta) => void }) {
   const { t } = useLanguage()
+  const cancelada = estaCancelada(venta)
+  /** Guard síncrono contra doble tap: `enviandoVoid` (estado) tarda un render en reflejarse. */
+  const voidEnCurso = useRef(false)
   const [estadoEnvio, setEstadoEnvio] = useState<Record<PrinterId, EstadoImpresion>>({
     carniceria: null,
     restaurante: null,
@@ -601,25 +639,74 @@ function DetalleOrden({ venta }: { venta: VentaEnCola['venta'] }) {
   const cancelarOrden = async () => {
     setMostrarConfirmacionCancelar(false)
     if (!venta.autorizacionDatafono || !venta.referenciaDatafono) return
+    if (cancelada || voidEnCurso.current) return
+    voidEnCurso.current = true
 
-    setEnviandoVoid(true)
-    setResultadoVoid(null)
-    const resultado = await enviarTransaccionDatafono({
-      transactionType: 'VOID',
-      terminalId: DATAFONO_CONFIG.terminalId,
-      authorizationNumber: venta.autorizacionDatafono,
-      referenceNumber: venta.referenciaDatafono,
-    })
-    setEnviandoVoid(false)
-    setResultadoVoid(resultado)
+    try {
+      // Re-lectura desde IndexedDB: la prop podría estar desactualizada (ej.
+      // otra pestaña o un reintento ya canceló esta orden).
+      const actual = await obtenerVentaPorId(venta.id)
+      if (actual && estaCancelada(actual)) {
+        onCancelada(actual)
+        window.alert(t('admin.ordenesYaCancelada'))
+        return
+      }
 
-    const ticket = ticketCancelacionVoucher(venta, resultado)
-    const resultadoImpresion = await enviarTicket('cliente', ticket)
-    console.log('[admin:cancelacion] Resultado de impresión del comprobante de cancelación:', resultadoImpresion)
+      setEnviandoVoid(true)
+      setResultadoVoid(null)
+      const resultado = await enviarTransaccionDatafono({
+        transactionType: 'VOID',
+        terminalId: DATAFONO_CONFIG.terminalId,
+        authorizationNumber: venta.autorizacionDatafono,
+        referenceNumber: venta.referenciaDatafono,
+      })
+      setEnviandoVoid(false)
+      setResultadoVoid(resultado)
+
+      let ventaParaTicket = venta
+      if (resultado.responseCode === '00') {
+        const cancelledAt = new Date().toISOString()
+        const cancelledBy = `ADMIN (${CAJA_ID})`
+        const marcada = await marcarVentaCancelada(venta.id, { cancelledAt, cancelledBy })
+        if (marcada.estado === 'cancelada') {
+          ventaParaTicket = marcada.venta
+          onCancelada(marcada.venta)
+          void enviarCancelacionAws({
+            orderId: venta.id,
+            status: 'CANCELLED',
+            cancelledAt,
+            authorizationNumber: resultado.authorizationNumber ?? venta.autorizacionDatafono,
+            referenceNumber: resultado.referenceNumber ?? venta.referenciaDatafono,
+          })
+        } else if (marcada.estado === 'ya-cancelada') {
+          ventaParaTicket = marcada.venta
+          onCancelada(marcada.venta)
+        }
+      }
+
+      const ticket = ticketCancelacionVoucher(ventaParaTicket, resultado)
+      const resultadoImpresion = await enviarTicket('cliente', ticket)
+      console.log('[admin:cancelacion] Resultado de impresión del comprobante de cancelación:', resultadoImpresion)
+    } finally {
+      voidEnCurso.current = false
+      setEnviandoVoid(false)
+    }
   }
 
   return (
     <div className="border-t border-wood-100 bg-wood-50 px-4 py-4">
+      {cancelada && venta.cancelledAt && (
+        <div className="mb-4 flex flex-wrap gap-4 text-sm font-semibold text-red-700">
+          <span>
+            {t('admin.ordenesCancelada')} · {formatHoraAmPm(new Date(venta.cancelledAt), false)}
+          </span>
+          {venta.cancelledBy && (
+            <span>
+              {t('admin.ordenesCanceladaPor')}: {venta.cancelledBy}
+            </span>
+          )}
+        </div>
+      )}
       {(venta.autorizacionDatafono || venta.referenciaDatafono) && (
         <div className="mb-4 flex flex-wrap gap-4 text-sm text-wood-700">
           {venta.autorizacionDatafono && (
@@ -655,7 +742,7 @@ function DetalleOrden({ venta }: { venta: VentaEnCola['venta'] }) {
               key={printer}
               type="button"
               onClick={() => imprimir(printer)}
-              disabled={estado === 'enviando'}
+              disabled={estado === 'enviando' || cancelada}
               className={`rounded-xl px-4 py-2.5 text-sm font-semibold text-cream-50 transition-transform active:scale-95 disabled:opacity-50 ${
                 estado === 'error' ? 'bg-red-700' : 'bg-wood-900'
               }`}
@@ -678,17 +765,18 @@ function DetalleOrden({ venta }: { venta: VentaEnCola['venta'] }) {
           ),
       )}
 
-      {puedeCancelar && (
+      {(puedeCancelar || cancelada) && (
         <div className="mt-4 border-t border-wood-200 pt-4">
           <button
             type="button"
             onClick={() => setMostrarConfirmacionCancelar(true)}
-            disabled={enviandoVoid}
+            disabled={enviandoVoid || cancelada}
             className="w-full rounded-xl bg-red-700 px-4 py-2.5 text-sm font-semibold text-cream-50 transition-transform active:scale-95 disabled:opacity-50"
           >
             {t('admin.ordenesCancelar')}
             {enviandoVoid && ` · ${t('admin.ordenesCancelarEnviando')}`}
           </button>
+          {cancelada && <p className="mt-2 text-sm font-semibold text-red-700">{t('admin.ordenesYaCancelada')}</p>}
         </div>
       )}
 
@@ -776,7 +864,11 @@ function PanelCierreCaja() {
     return <p className="text-center text-wood-500">{t('admin.cargando')}</p>
   }
 
-  const total = ventas.reduce((suma, { venta }) => suma + venta.total, 0)
+  // Las órdenes CANCELADA se excluyen por completo del cierre (lista, total y
+  // tiquete); sólo se cuentan para avisar al operador.
+  const ventasActivas = soloOrdenesActivas(ventas)
+  const cantidadCanceladas = ventas.length - ventasActivas.length
+  const total = ventasActivas.reduce((suma, { venta }) => suma + venta.total, 0)
 
   // Se imprime en la estación "Cliente" (caja/front), la más lógica para un
   // tiquete de cierre dirigido al cajero, sin necesidad de agregar una
@@ -792,7 +884,7 @@ function PanelCierreCaja() {
     if (estado === 'enviando') return
     setEstado('enviando')
     setErrorEnvio(null)
-    const ticket = ticketCierreCaja(ventas.map((v) => v.venta))
+    const ticket = ticketCierreCaja(ventasActivas.map((v) => v.venta))
     const resultado = await enviarTicket('cliente', ticket)
     if (!resultado.ok) {
       setEstado('error')
@@ -840,17 +932,23 @@ function PanelCierreCaja() {
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <h2 className="text-lg font-bold text-wood-900">{t('admin.cierreTitle')}</h2>
 
-      {ventas.length === 0 ? (
+      {ventasActivas.length === 0 ? (
         <p className="text-center text-wood-500">{t('admin.ordenesVacio')}</p>
       ) : (
         <div className="flex flex-col divide-y divide-wood-100 rounded-xl bg-white shadow-sm shadow-wood-900/5">
-          {ventas.map(({ venta }) => (
+          {ventasActivas.map(({ venta }) => (
             <div key={venta.id} className="flex items-center justify-between gap-3 px-4 py-3">
               <span className="font-mono text-sm text-wood-700">#{venta.id}</span>
               <span className="font-semibold text-wood-900">{formatCRC(venta.total)}</span>
             </div>
           ))}
         </div>
+      )}
+
+      {cantidadCanceladas > 0 && (
+        <p className="text-center text-sm font-semibold text-red-700">
+          {t('admin.cierreCanceladasExcluidas', { cantidad: String(cantidadCanceladas) })}
+        </p>
       )}
 
       <div className="flex items-center justify-between rounded-xl bg-wood-900 px-5 py-4">
@@ -862,7 +960,7 @@ function PanelCierreCaja() {
         <button
           type="button"
           onClick={() => setMostrarConfirmacion(true)}
-          disabled={enviandoTm || estado === 'enviando' || ventas.length === 0}
+          disabled={enviandoTm || estado === 'enviando' || ventasActivas.length === 0}
           className={`flex-1 rounded-2xl py-4 text-base font-bold text-white transition-transform active:scale-98 disabled:opacity-50 ${
             estado === 'error' ? 'bg-red-700' : 'bg-brand-red'
           }`}
@@ -1158,6 +1256,16 @@ function PanelAwsVentas() {
     }
   }
 
+  const reenviarCancelacion = async (ventaId: string) => {
+    setReenviando(`c:${ventaId}`)
+    try {
+      await reenviarCancelacionAwsManual(ventaId)
+    } finally {
+      setReenviando(null)
+      refrescar()
+    }
+  }
+
   const limpiarPendientes = () => {
     limpiarAwsPendientes()
     setConfirmarLimpiar(false)
@@ -1229,6 +1337,46 @@ function PanelAwsVentas() {
           </div>
         )}
       </div>
+
+      {resumen.cancelacionesPendientes.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <h3 className="text-sm font-bold tracking-wide text-wood-500 uppercase">
+            {t('admin.awsCancelacionesPendientesTitle', { cantidad: String(resumen.cancelacionesPendientes.length) })}
+          </h3>
+          <div className="flex flex-col divide-y divide-wood-100 rounded-xl bg-white shadow-sm shadow-wood-900/5">
+            {resumen.cancelacionesPendientes.map((item: EnvioCancelacionAwsPendiente) => (
+              <div key={item.ventaId} className="flex flex-col gap-2 px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-mono font-bold text-wood-900">#{item.ventaId}</span>
+                  <span
+                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+                      item.agotado ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
+                    }`}
+                  >
+                    {item.agotado
+                      ? t('admin.awsVentasAgotado')
+                      : t('admin.awsVentasIntentos', { intentos: String(item.intentos) })}
+                  </span>
+                </div>
+                <p className="text-xs text-wood-500">{item.ultimoError}</p>
+                {!item.agotado && (
+                  <p className="text-xs text-wood-400">
+                    {t('admin.awsVentasProximoIntento', { fecha: formatFechaHoraAdmin(item.proximoIntentoEn) })}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => reenviarCancelacion(item.ventaId)}
+                  disabled={reenviando === `c:${item.ventaId}`}
+                  className="self-start rounded-xl bg-brand-red px-4 py-2 text-sm font-bold text-white transition-transform active:scale-95 disabled:opacity-60"
+                >
+                  {reenviando === `c:${item.ventaId}` ? t('admin.awsVentasReenviando') : t('admin.awsVentasReenviar')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-3">
         <h3 className="text-sm font-bold tracking-wide text-wood-500 uppercase">

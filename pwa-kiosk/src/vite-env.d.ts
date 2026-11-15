@@ -24,6 +24,8 @@ interface ImportMetaEnv {
   readonly VITE_AWS_VENTAS_API_KEY_K001?: string
   /** Igual que la anterior, pero para el kiosko K002. */
   readonly VITE_AWS_VENTAS_API_KEY_K002?: string
+  /** URL del endpoint AWS de cancelaciones (opcional; si no se define se usa el mismo endpoint de ventas, ver `AWS_VENTAS_CONFIG` en `services/awsVentas.ts`). */
+  readonly VITE_AWS_CANCELACION_URL?: string
 }
 
 interface ImportMeta {

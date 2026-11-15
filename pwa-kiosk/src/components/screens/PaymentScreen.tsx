@@ -357,6 +357,7 @@ export default function PaymentScreen({
       claveFactura: tipoPago === 'factura' && facturaResultado?.ok ? facturaResultado.clave : undefined,
       autorizacionDatafono: datosDatafonoAprobadoRef.current?.autorizacion,
       referenciaDatafono: datosDatafonoAprobadoRef.current?.referencia,
+      status: 'ACTIVE',
     }
 
     encolarVenta(nuevaVenta)
