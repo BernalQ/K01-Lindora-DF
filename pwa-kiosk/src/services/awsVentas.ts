@@ -1,3 +1,4 @@
+import { nombreParaCodigoCodisa } from '../data/catalog'
 import type { WsDfPayload } from '../types/wsdf'
 import { CAJA_ID } from './consecutivo'
 import { camposPeriodoAws, periodoDesdeFechaCodisa } from './periodoOrdenes'
@@ -55,12 +56,25 @@ export interface CancelacionAwsPayload {
  * - `status: "ACTIVE"` (pasa a `"CANCELLED"` vía `enviarCancelacionAws`).
  * - `year`, `month`, `monthName`, `yearMonth`: período de la venta (hora
  *   local, derivado de `pedido.fecha`) para filtros, búsquedas y QuickSight.
+ * - `items`: una fila plana por línea con el NOMBRE del artículo real
+ *   (`nombre`, en español). Para los productos con variantes (ej. "Gaseosa o
+ *   Tropical", "Cerveza Importada") es la opción elegida ("Gaseosa",
+ *   "Tropical", "Heineken", …), resuelta a partir del `id_articulo` que ya
+ *   es específico por variante (ver `nombreParaCodigoCodisa` en
+ *   `data/catalog.ts`), no el nombre genérico del producto del menú.
  * Se arma al momento de enviar (no al encolar), así los pendientes viejos
  * guardados antes de este cambio también salen con los campos nuevos.
  */
 export function construirCuerpoAwsVenta(payload: WsDfPayload): Record<string, unknown> {
   const periodo = periodoDesdeFechaCodisa(payload.pedido.fecha)
-  return { ...payload, status: 'ACTIVE', ...(periodo ? camposPeriodoAws(periodo) : {}) }
+  const items = payload.pedido.detalle.map((d) => ({
+    id_articulo: d.id_articulo,
+    nombre: nombreParaCodigoCodisa(d.id_articulo, 'es'),
+    cantidad: Number(d.cantidad),
+    precio: Number(d.precio),
+    total: Number(d.total_neto),
+  }))
+  return { ...payload, status: 'ACTIVE', ...(periodo ? camposPeriodoAws(periodo) : {}), items }
 }
 
 /** Tiempo máximo de espera por una respuesta antes de abortar (mismo valor que `wsdf.ts`). */
