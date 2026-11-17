@@ -883,14 +883,14 @@ export function ticketCancelacionVoucher(venta: Venta, resultadoVoid: ResultadoD
   const numeroTransaccion = resultadoVoid.referenceNumber ?? venta.referenciaDatafono
   const numeroAutorizacion = resultadoVoid.authorizationNumber ?? venta.autorizacionDatafono
   // Sólo un VOID aprobado (`responseCode "00"`) deja la orden cancelada; si el
-  // TM lo rechazó, el comprobante NO puede decir "ORDEN CANCELADA".
+  // TM lo rechazó, el comprobante NO puede decir "ORDEN ANULADA".
   const aprobada = resultadoVoid.responseCode === '00'
   const fechaHora = new Date(venta.cancelledAt ?? Date.now())
 
   const lineas: TicketLine[] = [
     ...encabezadoCliente(venta),
-    { text: 'Recibo de Cancelación de Orden', bold: true },
-    { text: aprobada ? 'ORDEN CANCELADA' : 'CANCELACIÓN NO APROBADA', bold: true },
+    { text: 'Recibo de Anulación de Orden', bold: true },
+    { text: aprobada ? 'ORDEN ANULADA' : 'ANULACIÓN NO APROBADA', bold: true },
     '',
     `Número de Orden: ${venta.id}`,
   ]

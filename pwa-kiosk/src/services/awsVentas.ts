@@ -330,7 +330,7 @@ async function intentarCancelacion(payload: CancelacionAwsPayload): Promise<{ ok
   if (payload.orderId in leerPendientes()) {
     await reintentarPendiente(payload.orderId, true)
     if (payload.orderId in leerPendientes()) {
-      return { ok: false, error: 'La venta original aún no está confirmada en AWS; la cancelación se enviará después.' }
+      return { ok: false, error: 'La venta original aún no está confirmada en AWS; la anulación se enviará después.' }
     }
   }
   return intentarEnvioAws(payload, payload.orderId, AWS_VENTAS_CONFIG.endpointCancelacion)
