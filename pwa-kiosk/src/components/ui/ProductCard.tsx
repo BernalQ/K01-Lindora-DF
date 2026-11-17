@@ -16,6 +16,9 @@ export default function ProductCard({ product, onPersonalizar }: ProductCardProp
 
   const esPersonalizable =
     product.requiresTermino ||
+    // Platos con acompañamiento incluido que NO llevan término (Pechuga,
+    // Salmón): igual deben abrir el pop-up para escoger la guarnición.
+    product.includedGuarniciones > 0 ||
     (product.variantes && product.variantes.length > 0) ||
     (product.opcionUnica && product.opcionUnica.length > 0) ||
     (product.extras && product.extras.length > 0)

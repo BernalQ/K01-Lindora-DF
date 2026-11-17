@@ -117,7 +117,10 @@ function extrasTexto(item: OrderItem): string | null {
 function opcionTexto(item: OrderItem): string | null {
   const opcion = opcionParaMostrar(item.productId, item.opcion)
   if (!opcion) return null
-  return `  Personalizacion: ${opcion}`
+  // Sin etiqueta "Personalizacion:": el papel del cliente es de 32 columnas y
+  // con la etiqueta opciones largas (ej. "Con Moho de Cebolla y Ajo") se
+  // desbordaban. La opción va sola, indentada bajo el producto.
+  return `  ${opcion}`
 }
 
 interface GuarnicionesTextoOpciones {

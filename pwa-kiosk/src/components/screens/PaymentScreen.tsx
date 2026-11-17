@@ -11,6 +11,7 @@ import {
 import PrecioConIvi from '../ui/PrecioConIvi'
 import ProductImage from '../ui/ProductImage'
 import DatafonoPopup from '../ui/DatafonoPopup'
+import PersonalizarModal from '../ui/PersonalizarModal'
 import { cartItemCount, cartTotal, lineTerminosTexto, useCartStore } from '../../store/cartStore'
 import { useMesaStore } from '../../store/mesaStore'
 import { generarFactura, registrarVentaSimple } from '../../services/facturacion'
@@ -36,6 +37,7 @@ import {
   type PrinterId,
   type TicketLine,
 } from '../../services/tickets'
+import type { Product } from '../../types/catalog'
 import type { FacturaItem } from '../../types/factura'
 import type { OrderItem, Venta } from '../../types/order'
 import type { ResultadoDatafono } from '../../types/datafono'
@@ -91,6 +93,11 @@ export default function PaymentScreen({
   const lines = useCartStore((s) => s.lines)
   const mesa = useCartStore((s) => s.mesa)
   const addSimpleItem = useCartStore((s) => s.addSimpleItem)
+  const addCustomLine = useCartStore((s) => s.addCustomLine)
+  // Sugerencia que exige personalización (ej. Yuca con/sin moho, Papa Asada,
+  // Ensalada Griega): se abre el mismo pop-up del menú en vez de agregarla
+  // sin la opción obligatoria.
+  const [sugerenciaPersonalizar, setSugerenciaPersonalizar] = useState<Product | null>(null)
   const tipoPago = useCartStore((s) => s.tipoPago)
   const setTipoPago = useCartStore((s) => s.setTipoPago)
   const cliente = useCartStore((s) => s.cliente)
@@ -789,7 +796,14 @@ export default function PaymentScreen({
                     <button
                       key={product.id}
                       type="button"
-                      onClick={() => addSimpleItem(product, language)}
+                      onClick={() =>
+                        product.opcionUnica?.length ||
+                        product.variantes?.length ||
+                        product.extras?.length ||
+                        product.includedGuarniciones > 0
+                          ? setSugerenciaPersonalizar(product)
+                          : addSimpleItem(product, language)
+                      }
                       className="flex flex-col items-center gap-1.5 rounded-xl bg-wood-50 p-2 text-center shadow-sm shadow-wood-900/5 transition-transform active:scale-95"
                     >
                       {/* size="fill": la imagen ocupa el 100% del ancho de
@@ -817,6 +831,17 @@ export default function PaymentScreen({
                     </button>
                   ))}
                 </div>
+                {sugerenciaPersonalizar && (
+                  <PersonalizarModal
+                    key={sugerenciaPersonalizar.id}
+                    product={sugerenciaPersonalizar}
+                    onClose={() => setSugerenciaPersonalizar(null)}
+                    onConfirmar={(lineasNuevas) => {
+                      lineasNuevas.forEach(addCustomLine)
+                      setSugerenciaPersonalizar(null)
+                    }}
+                  />
+                )}
               </section>
             </div>
 
