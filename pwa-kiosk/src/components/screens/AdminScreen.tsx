@@ -613,6 +613,11 @@ function FilaOrden({
             {' · '}
             {t('admin.ordenesMesa', { mesa: venta.mesa })}
           </span>
+          {venta.paraLlevar && (
+            <span className="mt-1 w-fit rounded-full bg-amber-100 px-3 py-0.5 text-xs font-bold text-amber-800">
+              {t('admin.ordenesParaLlevar')}
+            </span>
+          )}
           {cancelada && venta.cancelledAt && (
             <span className="text-sm font-semibold text-red-700">
               {t('admin.ordenesCanceladaHora', { hora: formatHoraAmPm(new Date(venta.cancelledAt), false) })}
@@ -787,6 +792,13 @@ function DetalleOrden({ venta, onCancelada }: { venta: Venta; onCancelada: (v: V
 
   return (
     <div className="border-t border-wood-100 bg-wood-50 px-4 py-4">
+      {venta.paraLlevar && (
+        <div className="mb-4">
+          <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-amber-800">
+            {t('admin.ordenesParaLlevar')}
+          </span>
+        </div>
+      )}
       {cancelada && venta.cancelledAt && (
         <div className="mb-4 flex flex-wrap gap-4 text-sm font-semibold text-red-700">
           <span>

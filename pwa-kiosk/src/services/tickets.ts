@@ -542,6 +542,16 @@ function agruparParaCocina(items: OrderItem[]): TicketLine[] {
   return lineas
 }
 
+/**
+ * Aviso destacado para cocina cuando la orden es PARA LLEVAR (ver
+ * `Venta.paraLlevar`): se imprime justo antes del listado de productos del
+ * tiquete de parrilla, enmarcado en asteriscos del ancho completo del papel.
+ */
+function avisoParaLlevarCocina(): TicketLine[] {
+  const asteriscos = '*'.repeat(ANCHO)
+  return [asteriscos, { text: 'PARA LLEVAR - PARA LLEVAR', bold: true, medium: true }, asteriscos, '']
+}
+
 export function ticketRestaurante(venta: Venta): TicketLine[] {
   const lineas: TicketLine[] = [
     // 4 renglones en blanco totalmente en la parte superior del tiquete,
@@ -555,6 +565,7 @@ export function ticketRestaurante(venta: Venta): TicketLine[] {
     '*** PARRILLA / COCINA ***',
     ...encabezado(venta),
     FIN_ENCABEZADO,
+    ...(venta.paraLlevar ? avisoParaLlevarCocina() : []),
     ...agruparParaCocina(venta.items),
   ]
   lineas.push(SEPARADOR)
@@ -614,6 +625,7 @@ export function ticketConsolidadoRestaurante(mesaId: string, ordenes: Venta[]): 
     formatFechaHoraAmPm(new Date()),
     '',
     FIN_ENCABEZADO,
+    ...(ordenes.some((v) => v.paraLlevar) ? avisoParaLlevarCocina() : []),
     ...agruparParaCocina(items),
   ]
   lineas.push(SEPARADOR)
@@ -653,7 +665,15 @@ function encabezadoCliente(venta: Venta): TicketLine[] {
 }
 
 export function ticketCliente(venta: Venta): TicketLine[] {
-  const lineas: TicketLine[] = [...encabezadoCliente(venta), ...encabezadoColumnasItems()]
+  const encabezado = encabezadoCliente(venta)
+  if (venta.paraLlevar) {
+    // "ORDEN PARA LLEVAR" entre separadores, después de los datos de la
+    // factura/caja y antes del encabezado de columnas de productos (dentro
+    // del bloque centrado, justo antes de `FIN_ENCABEZADO`).
+    const indiceFin = encabezado.indexOf(FIN_ENCABEZADO)
+    encabezado.splice(indiceFin, 0, { text: 'ORDEN PARA LLEVAR', bold: true }, SEPARADOR)
+  }
+  const lineas: TicketLine[] = [...encabezado, ...encabezadoColumnasItems()]
   let subtotal = 0
   let iva = 0
   const itemsLog: { cantidad: number; producto: string; precio: string }[] = []

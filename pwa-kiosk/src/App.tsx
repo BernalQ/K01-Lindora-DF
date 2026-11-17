@@ -97,8 +97,8 @@ function App() {
     setScreen('welcome')
   }
 
-  const handleMesaSetupContinuar = (mesaId: string, compartida: boolean) => {
-    iniciarMesa(mesaId, compartida)
+  const handleMesaSetupContinuar = (mesaId: string, compartida: boolean, paraLlevar: boolean) => {
+    iniciarMesa(mesaId, compartida, paraLlevar)
     setScreen('menu')
   }
 

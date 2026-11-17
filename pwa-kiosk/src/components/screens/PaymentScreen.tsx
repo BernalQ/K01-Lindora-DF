@@ -123,6 +123,7 @@ export default function PaymentScreen({
 
   const mesaCompartida = useMesaStore((s) => s.compartida)
   const mesaId = useMesaStore((s) => s.mesaId)
+  const mesaParaLlevar = useMesaStore((s) => s.paraLlevar)
   const registrarOrden = useMesaStore((s) => s.registrarOrden)
   const cerrarMesaStore = useMesaStore((s) => s.cerrar)
   const cancelarMesaStore = useMesaStore((s) => s.cancelar)
@@ -339,6 +340,7 @@ export default function PaymentScreen({
       caja: CAJA_ID,
       items,
       mesa,
+      paraLlevar: mesaParaLlevar,
       total: cartTotal(lines),
       fechaHora: new Date().toISOString(),
       tipoPago: tipoPago ?? undefined,

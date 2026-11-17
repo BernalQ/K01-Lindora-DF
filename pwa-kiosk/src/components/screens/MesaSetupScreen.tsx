@@ -12,7 +12,7 @@ const REFRESCO_BLOQUEOS_MS = 15_000
 
 interface MesaSetupScreenProps {
   /** El nombre de raza elegido, usado siempre como ID de mesa (Sí y No por igual). */
-  onContinuar: (mesaId: string, compartida: boolean) => void
+  onContinuar: (mesaId: string, compartida: boolean, paraLlevar: boolean) => void
   /** Botón "Cancelar": regresa de inmediato a la página de inicio (`WelcomeScreen`). */
   onCancelar: () => void
 }
@@ -41,6 +41,8 @@ export default function MesaSetupScreen({ onContinuar, onCancelar }: MesaSetupSc
   const { t } = useLanguage()
   const [compartida, setCompartida] = useState<boolean | null>(null)
   const [raza, setRaza] = useState('')
+  // `null` = aún sin responder; se pregunta debajo del selector de mesa (misma página, sin paso extra).
+  const [paraLlevar, setParaLlevar] = useState<boolean | null>(null)
   const [bloqueadas, setBloqueadas] = useState<Set<string>>(() => mesasBloqueadas())
 
   // Refresca periódicamente cuáles identificadores siguen bloqueados, para
@@ -61,11 +63,11 @@ export default function MesaSetupScreen({ onContinuar, onCancelar }: MesaSetupSc
     return suscribirCambiosMesaLocks(() => setBloqueadas(mesasBloqueadas()))
   }, [])
 
-  const puedeContinuar = compartida !== null && raza !== '' && !bloqueadas.has(raza)
+  const puedeContinuar = compartida !== null && raza !== '' && !bloqueadas.has(raza) && paraLlevar !== null
 
   const handleContinuar = () => {
     if (!puedeContinuar) return
-    onContinuar(raza, Boolean(compartida))
+    onContinuar(raza, Boolean(compartida), Boolean(paraLlevar))
   }
 
   return (
@@ -223,6 +225,44 @@ export default function MesaSetupScreen({ onContinuar, onCancelar }: MesaSetupSc
                     </option>
                   ))}
                 </select>
+              </div>
+            )}
+
+            {/* Pregunta "¿para comer en el restaurante o para llevar?": aparece
+                en esta misma columna, debajo del selector de mesa, una vez que
+                se elige el identificador (sin pantalla ni paso adicional).
+                Mismo contenedor/estilo que el selector de mesa. */}
+            {compartida !== null && raza !== '' && (
+              <div className="flex w-full flex-col gap-2 rounded-2xl bg-white/10 p-4 shadow-sm shadow-black/10">
+                <h2 className="text-center text-lg font-bold text-cream-50 sm:text-xl">
+                  {t('mesaSetup.paraLlevarPregunta')}
+                </h2>
+                <div className="flex w-full gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setParaLlevar(false)}
+                    aria-pressed={paraLlevar === false}
+                    className={`flex-1 rounded-2xl py-4 text-lg font-bold transition-transform active:scale-95 ${
+                      paraLlevar === false
+                        ? 'bg-cream-50 text-wood-900'
+                        : 'border-2 border-cream-50/30 bg-white/5 text-cream-50'
+                    }`}
+                  >
+                    {t('mesaSetup.paraLlevarSi')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setParaLlevar(true)}
+                    aria-pressed={paraLlevar === true}
+                    className={`flex-1 rounded-2xl py-4 text-lg font-bold transition-transform active:scale-95 ${
+                      paraLlevar === true
+                        ? 'bg-brand-red text-white'
+                        : 'border-2 border-cream-50/30 bg-white/5 text-cream-50'
+                    }`}
+                  >
+                    {t('mesaSetup.paraLlevarLlevar')}
+                  </button>
+                </div>
               </div>
             )}
           </div>

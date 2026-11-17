@@ -50,6 +50,14 @@ export interface Venta {
   caja?: string
   items: OrderItem[]
   mesa: string
+  /**
+   * `true` si el cliente indicó que la orden es PARA LLEVAR (pregunta debajo
+   * del selector de mesa en `MesaSetupScreen`); `false` si es para comer en
+   * el restaurante. Ausente en ventas guardadas antes de este campo (se
+   * trata como `false`). Sólo afecta tiquetes de cliente/parrilla y la
+   * etiqueta en Admin: NO se envía a Codisa ni a AWS.
+   */
+  paraLlevar?: boolean
   total: number
   fechaHora: string
   /** 'factura': se generó factura electrónica. 'simple': sólo comprobante interno. */

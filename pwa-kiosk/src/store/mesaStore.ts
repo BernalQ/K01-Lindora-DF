@@ -25,9 +25,11 @@ interface MesaState {
   activa: boolean
   compartida: boolean
   mesaId: string
+  /** La orden de esta mesa es para llevar (se pregunta una vez en `MesaSetupScreen`; las órdenes siguientes de una mesa compartida la heredan). */
+  paraLlevar: boolean
   ordenes: Venta[]
   /** Abre una sesión de mesa nueva (simple o compartida). */
-  iniciar: (mesaId: string, compartida: boolean) => void
+  iniciar: (mesaId: string, compartida: boolean, paraLlevar?: boolean) => void
   /** Acumula una venta ya cobrada, para el tiquete consolidado al cerrar. */
   registrarOrden: (venta: Venta) => void
   /** Cierra la mesa: nadie puede agregar más órdenes bajo este ID luego de esto. */
@@ -46,9 +48,10 @@ export const useMesaStore = create<MesaState>((set, get) => ({
   activa: false,
   compartida: false,
   mesaId: '',
+  paraLlevar: false,
   ordenes: [],
 
-  iniciar: (mesaId, compartida) => {
+  iniciar: (mesaId, compartida, paraLlevar = false) => {
     // Bloquea el identificador por 30 minutos para que no pueda elegirse de
     // nuevo en otra sesión hasta que expire (ver `services/mesaLocks.ts`).
     // Sin `orderId` todavía (no existe ninguna orden en este punto, ver
@@ -57,18 +60,18 @@ export const useMesaStore = create<MesaState>((set, get) => ({
     // cuanto se confirma la primera orden de esta mesa (ver
     // `PaymentScreen.tsx` -> `bloquearMesa(nuevaVenta.mesa, nuevaVenta.id)`).
     bloquearMesa(mesaId)
-    set({ activa: true, compartida, mesaId, ordenes: [] })
+    set({ activa: true, compartida, mesaId, paraLlevar, ordenes: [] })
   },
 
   registrarOrden: (venta) => set((state) => ({ ordenes: [...state.ordenes, venta] })),
 
-  cerrar: () => set({ activa: false, compartida: false, mesaId: '', ordenes: [] }),
+  cerrar: () => set({ activa: false, compartida: false, mesaId: '', paraLlevar: false, ordenes: [] }),
 
   cancelar: () => {
     // `liberarMesa` ya sincroniza la liberación con el otro kiosko de
     // inmediato (mensaje `unlockTable`, ver `services/mesaLocks.ts`), para
     // que no se quede esperando a que venzan los 30 minutos de su lado.
     liberarMesa(get().mesaId)
-    set({ activa: false, compartida: false, mesaId: '', ordenes: [] })
+    set({ activa: false, compartida: false, mesaId: '', paraLlevar: false, ordenes: [] })
   },
 }))
